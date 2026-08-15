@@ -1,0 +1,6 @@
+{
+  "name": "TeamFlow",
+  "description": "Mobile-first realtime team assignment and class attendance management tool for classrooms and activities with host and viewer modes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
