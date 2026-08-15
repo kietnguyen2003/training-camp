@@ -10,19 +10,43 @@ interface LoginScreenProps {
 }
 
 function resolveOAuthRedirectUrl() {
+  const currentUrl = new URL(window.location.pathname, window.location.origin);
+  const isCurrentHostLocal =
+    currentUrl.hostname === 'localhost' || currentUrl.hostname === '127.0.0.1';
   const configuredUrl = import.meta.env.VITE_PUBLIC_SITE_URL?.trim();
 
-  if (configuredUrl) {
+  if (!configuredUrl) {
+    return currentUrl.toString();
+  }
+
+  try {
+    const parsedConfiguredUrl = new URL(configuredUrl);
+    const isConfiguredHostLocal =
+      parsedConfiguredUrl.hostname === 'localhost' ||
+      parsedConfiguredUrl.hostname === '127.0.0.1';
+
     if (configuredUrl.includes('/auth/v1/callback')) {
       console.warn(
         'Ignoring VITE_PUBLIC_SITE_URL because it points to the Supabase callback URL. Use your app URL instead.'
       );
-    } else {
-      return configuredUrl;
+      return currentUrl.toString();
     }
+
+    if (!isCurrentHostLocal && isConfiguredHostLocal) {
+      console.warn(
+        'Ignoring localhost VITE_PUBLIC_SITE_URL on a deployed origin. Using the current browser origin instead.'
+      );
+      return currentUrl.toString();
+    }
+
+    return new URL(parsedConfiguredUrl.pathname || '/', parsedConfiguredUrl.origin).toString();
+  } catch {
+    console.warn(
+      'Ignoring invalid VITE_PUBLIC_SITE_URL value. Using the current browser origin instead.'
+    );
   }
 
-  return new URL(window.location.pathname, window.location.origin).toString();
+  return currentUrl.toString();
 }
 
 export function LoginScreen({ onError }: LoginScreenProps) {
