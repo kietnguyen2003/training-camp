@@ -38,6 +38,7 @@ import {
   updateParticipantLevelInDB,
   subscribeToRoomChanges,
 } from './services/roomService';
+import { getTapToggleStatus } from './services/attendanceStatus';
 import { assignPresentParticipantsToTeams } from './services/levelAssignment';
 import {
   clearHostSession,
@@ -143,6 +144,7 @@ export default function App() {
   const unassignedParticipants = participants.filter((p) => p.teamId === null);
   const presentParticipants = participants.filter((p) => p.status === 'present');
   const absentParticipants = participants.filter((p) => p.status === 'absent');
+  const retiredParticipants = participants.filter((p) => p.status === 'retired');
   const presentUnassigned = unassignedParticipants.filter((p) => p.status === 'present');
 
   const getTeamMemberCount = (teamId: string) =>
@@ -257,7 +259,7 @@ export default function App() {
     const student = participants.find((p) => p.id === participantId);
     if (!student) return;
 
-    const nextStatus = student.status === 'present' ? 'absent' : 'present';
+    const nextStatus = getTapToggleStatus(student.status);
 
     // Optimistic update
     setParticipants((prev) =>
@@ -268,10 +270,32 @@ export default function App() {
     updateParticipantStatusInDB(participantId, nextStatus);
 
     showToast(
-      nextStatus === 'absent'
+      nextStatus === 'present'
+        ? `${student.name}: Đã ghi nhận CÓ MẶT`
+        : nextStatus === 'absent'
         ? `${student.name}: Đã ghi nhận VẮNG MẶT`
-        : `${student.name}: Đã ghi nhận CÓ MẶT`,
-      nextStatus === 'absent' ? 'warning' : 'success'
+        : `${student.name}: Đã chuyển sang ĐÃ NGHỈ`,
+      nextStatus === 'present' ? 'success' : 'warning'
+    );
+  };
+
+  const handleSetAttendanceStatus = (participantId: string, status: Participant['status']) => {
+    const student = participants.find((p) => p.id === participantId);
+    if (!student || student.status === status) return;
+
+    setParticipants((prev) =>
+      prev.map((p) => (p.id === participantId ? { ...p, status, updatedAt: Date.now() } : p))
+    );
+
+    updateParticipantStatusInDB(participantId, status);
+
+    showToast(
+      status === 'present'
+        ? `${student.name}: Đã quay lại CÓ MẶT`
+        : status === 'absent'
+        ? `${student.name}: Đã ghi nhận VẮNG MẶT`
+        : `${student.name}: Đã chuyển sang ĐÃ NGHỈ`,
+      status === 'present' ? 'success' : 'warning'
     );
   };
 
@@ -490,7 +514,7 @@ export default function App() {
         <HostActionBar
           unassignedCount={presentUnassigned.length}
           presentCount={presentParticipants.length}
-          absentCount={absentParticipants.length}
+          absentCount={absentParticipants.length + retiredParticipants.length}
           onShuffle={handleShuffle}
           onOpenAttendance={() => setActiveSheet('attendance')}
           onOpenReset={() => setActiveSheet('reset')}
@@ -508,6 +532,7 @@ export default function App() {
         teams={teams}
         onClose={() => setActiveSheet(null)}
         onToggleStatus={handleToggleAttendance}
+        onSetStatus={handleSetAttendanceStatus}
         onMarkAllStatus={handleMarkAllAttendance}
         onAddStudent={handleAddStudentToRoster}
         onBulkImport={handleBulkImportRoster}

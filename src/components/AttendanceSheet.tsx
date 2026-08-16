@@ -1,21 +1,20 @@
-import { useState, useMemo, type FormEvent } from 'react';
+import { useRef, useState, useMemo, type FormEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X,
   UserCheck,
-  UserX,
   Search,
-  Check,
   Plus,
   FileText,
-  Trash2,
-  AlertCircle,
   Users,
   CheckCheck,
-  Edit2,
   Sparkles,
+  Circle,
+  CircleCheckBig,
 } from 'lucide-react';
 import { Participant, Team } from '../types';
+import { buildAttendanceGridRows } from './attendanceGrid';
+import { getStatusLabel } from '../services/attendanceStatus';
 
 interface AttendanceSheetProps {
   isOpen: boolean;
@@ -23,6 +22,7 @@ interface AttendanceSheetProps {
   teams: Team[];
   onClose: () => void;
   onToggleStatus: (participantId: string) => void;
+  onSetStatus: (participantId: string, status: Participant['status']) => void;
   onMarkAllStatus: (status: 'present' | 'absent') => void;
   onAddStudent: (name: string, studentCode?: string, note?: string) => void;
   onBulkImport: (names: string[], replaceExisting: boolean) => void;
@@ -36,6 +36,7 @@ export function AttendanceSheet({
   teams,
   onClose,
   onToggleStatus,
+  onSetStatus,
   onMarkAllStatus,
   onAddStudent,
   onBulkImport,
@@ -43,8 +44,8 @@ export function AttendanceSheet({
   onUpdateNote,
 }: AttendanceSheetProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterTab, setFilterTab] = useState<'all' | 'present' | 'absent'>('all');
-  const [activeTabMode, setActiveTabMode] = useState<'list' | 'add' | 'import'>('list');
+  const [filterTab, setFilterTab] = useState<'all' | 'present' | 'absent' | 'retired'>('all');
+  const [activeTabMode, setActiveTabMode] = useState<'list' | 'retired' | 'add' | 'import'>('list');
 
   // New student form state
   const [newName, setNewName] = useState('');
@@ -54,23 +55,28 @@ export function AttendanceSheet({
   // Bulk import state
   const [bulkText, setBulkText] = useState('');
   const [replaceExisting, setReplaceExisting] = useState(false);
-
-  // Edit note modal/inline state
-  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
-  const [editingNoteText, setEditingNoteText] = useState('');
+  const [longPressParticipant, setLongPressParticipant] = useState<Participant | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const suppressClickRef = useRef<string | null>(null);
 
   // Calculate statistics
-  const totalCount = participants.length;
-  const presentCount = participants.filter((p) => p.status === 'present').length;
-  const absentCount = participants.filter((p) => p.status === 'absent').length;
-  const attendanceRate = totalCount > 0 ? Math.round((presentCount / totalCount) * 100) : 0;
+  const activeParticipants = participants.filter((p) => p.status !== 'retired');
+  const retiredParticipants = participants.filter((p) => p.status === 'retired');
+  const totalCount = activeParticipants.length;
+  const presentCount = activeParticipants.filter((p) => p.status === 'present').length;
+  const absentCount = activeParticipants.filter((p) => p.status === 'absent').length;
+  const retiredCount = retiredParticipants.length;
 
   // Filtered list
   const filteredParticipants = useMemo(() => {
-    return participants.filter((p) => {
+    const sourceParticipants = activeTabMode === 'retired' ? retiredParticipants : activeParticipants;
+
+    return sourceParticipants.filter((p) => {
       // Tab filter
-      if (filterTab === 'present' && p.status !== 'present') return false;
-      if (filterTab === 'absent' && p.status !== 'absent') return false;
+      if (activeTabMode !== 'retired') {
+        if (filterTab === 'present' && p.status !== 'present') return false;
+        if (filterTab === 'absent' && p.status !== 'absent') return false;
+      }
 
       // Search query
       if (searchQuery.trim()) {
@@ -82,7 +88,12 @@ export function AttendanceSheet({
       }
       return true;
     });
-  }, [participants, filterTab, searchQuery]);
+  }, [activeParticipants, retiredParticipants, activeTabMode, filterTab, searchQuery]);
+
+  const attendanceRows = useMemo(
+    () => buildAttendanceGridRows(filteredParticipants),
+    [filteredParticipants]
+  );
 
   const handleAddSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -117,6 +128,36 @@ export function AttendanceSheet({
     return t ? t.name : 'Chưa chia nhóm';
   };
 
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const startLongPress = (participant: Participant) => {
+    clearLongPressTimer();
+
+    if (activeTabMode === 'retired') {
+      return;
+    }
+
+    longPressTimerRef.current = window.setTimeout(() => {
+      suppressClickRef.current = participant.id;
+      setLongPressParticipant(participant);
+      clearLongPressTimer();
+    }, 450);
+  };
+
+  const handleParticipantTap = (participant: Participant) => {
+    if (suppressClickRef.current === participant.id) {
+      suppressClickRef.current = null;
+      return;
+    }
+
+    onToggleStatus(participant.id);
+  };
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -149,7 +190,7 @@ export function AttendanceSheet({
                     Điểm danh học viên
                   </h3>
                   <p className="text-[11px] text-slate-400 font-medium">
-                    {presentCount} có mặt • {absentCount} vắng • Tổng {totalCount} học viên
+                    {presentCount} có mặt • {absentCount} vắng • {retiredCount} đã nghỉ
                   </p>
                 </div>
               </div>
@@ -181,6 +222,19 @@ export function AttendanceSheet({
 
               <button
                 type="button"
+                onClick={() => setActiveTabMode('retired')}
+                className={`py-1.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  activeTabMode === 'retired'
+                    ? 'bg-slate-200 text-slate-950 shadow-md'
+                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                }`}
+              >
+                <Circle className="w-3.5 h-3.5" />
+                <span>Đã nghỉ ({retiredCount})</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setActiveTabMode('add')}
                 className={`py-1.5 px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                   activeTabMode === 'add'
@@ -207,16 +261,14 @@ export function AttendanceSheet({
             </div>
 
             {/* CONTENT VIEWS */}
-            {activeTabMode === 'list' && (
+            {(activeTabMode === 'list' || activeTabMode === 'retired') && (
               <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                {/* Search & Quick Action Controls */}
-                <div className="p-3 px-4 space-y-2 border-b border-slate-800 bg-[#0D1B2E] shrink-0">
-                  {/* Search bar */}
+                <div className="p-3 px-4 space-y-3 border-b border-slate-800 bg-[#0D1B2E] shrink-0">
                   <div className="relative">
                     <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
-                      placeholder="Tìm theo tên học sinh, mã số..."
+                      placeholder="Tìm theo tên hoặc mã học viên"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="w-full bg-[#112238] border border-slate-700/80 pl-9 pr-8 py-2 rounded-xl text-xs text-white placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 font-medium"
@@ -232,181 +284,157 @@ export function AttendanceSheet({
                     )}
                   </div>
 
-                  {/* Filter chips & Batch Attendance Buttons */}
-                  <div className="flex items-center justify-between gap-2 flex-wrap pt-0.5">
-                    {/* Status filter chips */}
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setFilterTab('all')}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
-                          filterTab === 'all'
-                            ? 'bg-amber-400 text-slate-950'
-                            : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                        }`}
-                      >
-                        Tất cả ({totalCount})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setFilterTab('present')}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
-                          filterTab === 'present'
-                            ? 'bg-sky-500 text-white'
-                            : 'bg-sky-500/20 text-sky-300 hover:bg-sky-500/30'
-                        }`}
-                      >
-                        Có mặt ({presentCount})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setFilterTab('absent')}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
-                          filterTab === 'absent'
-                            ? 'bg-rose-500 text-white'
-                            : 'bg-rose-500/20 text-rose-300 hover:bg-rose-500/30'
-                        }`}
-                      >
-                        Vắng ({absentCount})
-                      </button>
-                    </div>
+                  {activeTabMode === 'list' && (
+                    <div className="flex items-center justify-between gap-2 flex-wrap pt-0.5">
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setFilterTab('all')}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                            filterTab === 'all'
+                              ? 'bg-amber-400 text-slate-950'
+                              : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                          }`}
+                        >
+                          Tất cả ({totalCount})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFilterTab('present')}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                            filterTab === 'present'
+                              ? 'bg-sky-500 text-white'
+                              : 'bg-sky-500/20 text-sky-300 hover:bg-sky-500/30'
+                          }`}
+                        >
+                          Có mặt ({presentCount})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFilterTab('absent')}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                            filterTab === 'absent'
+                              ? 'bg-rose-500 text-white'
+                              : 'bg-rose-500/20 text-rose-300 hover:bg-rose-500/30'
+                          }`}
+                        >
+                          Vắng ({absentCount})
+                        </button>
+                      </div>
 
-                    {/* Batch All Present / Absent */}
-                    <div className="flex items-center gap-1.5 ml-auto">
-                      <button
-                        type="button"
-                        onClick={() => onMarkAllStatus('present')}
-                        className="text-[11px] font-bold text-sky-300 hover:text-sky-200 bg-sky-500/20 hover:bg-sky-500/30 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
-                        title="Đánh dấu tất cả có mặt"
-                      >
-                        <CheckCheck className="w-3.5 h-3.5" />
-                        <span>Tất cả có mặt</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onMarkAllStatus('absent')}
-                        className="text-[11px] font-bold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors"
-                        title="Đánh dấu tất cả vắng"
-                      >
-                        <UserX className="w-3.5 h-3.5" />
-                        <span>Tất cả vắng</span>
-                      </button>
+                      <div className="flex items-center gap-1.5 ml-auto">
+                        <button
+                          type="button"
+                          onClick={() => onMarkAllStatus('present')}
+                          className="text-[11px] font-bold text-sky-300 hover:text-sky-200 bg-sky-500/20 hover:bg-sky-500/30 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Đánh dấu tất cả có mặt"
+                        >
+                          <CheckCheck className="w-3.5 h-3.5" />
+                          <span>All co mat</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onMarkAllStatus('absent')}
+                          className="text-[11px] font-bold text-rose-300 hover:text-rose-200 bg-rose-500/15 hover:bg-rose-500/25 active:bg-rose-500/30 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Đánh dấu tất cả vắng"
+                        >
+                          <Circle className="w-3.5 h-3.5" />
+                          <span>All vang</span>
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
-                {/* Student Roster List */}
-                <div className="flex-1 overflow-y-auto px-3.5 sm:px-4 py-2 space-y-1.5 min-h-0">
+                <div className="flex-1 overflow-y-auto px-3.5 sm:px-4 py-3 min-h-0">
                   {filteredParticipants.length === 0 ? (
                     <div className="py-12 text-center text-gray-400">
                       <Users className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                      <p className="text-xs font-semibold">Không tìm thấy học viên nào</p>
-                      <p className="text-[11px] mt-0.5">Thử đổi bộ lọc hoặc thêm học viên mới</p>
+                      <p className="text-xs font-semibold">
+                        {activeTabMode === 'retired' ? 'Chưa có học viên nào đã nghỉ' : 'Không tìm thấy học viên nào'}
+                      </p>
+                      <p className="text-[11px] mt-0.5">
+                        {activeTabMode === 'retired' ? 'Những học viên đã nghỉ sẽ xuất hiện ở đây' : 'Thử đổi bộ lọc hoặc thêm học viên mới'}
+                      </p>
                     </div>
                   ) : (
-                    filteredParticipants.map((p) => {
-                      const isPresent = p.status === 'present';
-                      return (
-                        <div
-                          key={p.id}
-                          className={`flex items-center justify-between gap-2 p-2.5 rounded-xl transition-all border ${
-                            isPresent
-                              ? 'bg-white hover:bg-gray-50 border-gray-100 shadow-2xs'
-                              : 'bg-rose-50/50 border-rose-100/90'
-                          }`}
-                        >
-                          {/* Left: Avatar & Info */}
-                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                            <div
-                              className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
-                                isPresent
-                                  ? 'bg-indigo-100 text-indigo-700'
-                                  : 'bg-rose-100 text-rose-700'
-                              }`}
-                            >
-                              {p.name.slice(0, 1).toUpperCase()}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5">
-                                <span
-                                  className={`font-bold text-xs sm:text-sm truncate ${
-                                    isPresent ? 'text-gray-900' : 'text-rose-950 line-through opacity-75'
+                    <div className="rounded-[2rem] border border-slate-700/80 bg-[#101725] p-3 sm:p-4 shadow-2xl">
+                      <div className="grid gap-3">
+                        {attendanceRows.map((row, rowIndex) => (
+                          <div key={`attendance-row-${rowIndex}`} className="grid grid-cols-2 gap-3">
+                            {row.map((participant, columnIndex) => {
+                              if (!participant) {
+                                return <div key={`attendance-empty-${rowIndex}-${columnIndex}`} className="h-[78px]" />;
+                              }
+
+                              const isPresent = participant.status === 'present';
+                              const isRetired = participant.status === 'retired';
+
+                              return (
+                                <button
+                                  key={participant.id}
+                                  type="button"
+                                  onClick={() => handleParticipantTap(participant)}
+                                  onContextMenu={(event) => {
+                                    event.preventDefault();
+                                    if (activeTabMode !== 'retired') {
+                                      setLongPressParticipant(participant);
+                                    }
+                                  }}
+                                  onPointerDown={() => startLongPress(participant)}
+                                  onPointerUp={clearLongPressTimer}
+                                  onPointerLeave={clearLongPressTimer}
+                                  onPointerCancel={clearLongPressTimer}
+                                  className={`min-h-[78px] rounded-3xl border-2 px-3 py-3 text-left transition-all active:scale-[0.98] ${
+                                    isPresent
+                                      ? 'border-[#E7E0D5] bg-[#F8F5EE] text-[#17263A] shadow-md'
+                                      : isRetired
+                                      ? 'border-slate-500/80 bg-slate-800/60 text-slate-100 hover:border-slate-300 hover:bg-slate-700/70'
+                                      : 'border-slate-500/80 bg-transparent text-slate-200 hover:border-rose-400/70 hover:bg-rose-500/10'
                                   }`}
                                 >
-                                  {p.name}
-                                </span>
-                                {p.studentCode && (
-                                  <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-gray-100 text-gray-500 font-bold shrink-0">
-                                    {p.studentCode}
-                                  </span>
-                                )}
-                              </div>
-
-                              <div className="flex items-center gap-1.5 text-[10px] text-gray-400 font-medium mt-0.5">
-                                <span>{getTeamName(p.teamId)}</span>
-                                {p.note && (
-                                  <>
-                                    <span>•</span>
-                                    <span className="text-amber-700 font-semibold truncate bg-amber-50 px-1 rounded">
-                                      {p.note}
-                                    </span>
-                                  </>
-                                )}
-                              </div>
-                            </div>
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0 flex-1">
+                                      <div className="truncate text-sm font-black leading-tight">
+                                        {participant.name}
+                                      </div>
+                                      <div className={`mt-1 text-[10px] font-semibold ${
+                                        isPresent ? 'text-slate-500' : 'text-slate-400'
+                                      }`}>
+                                        {participant.studentCode || getTeamName(participant.teamId)}
+                                      </div>
+                                      {participant.note && (
+                                        <div className={`mt-1 truncate text-[10px] ${
+                                          isPresent ? 'text-amber-700' : 'text-amber-300'
+                                        }`}>
+                                          {participant.note}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div
+                                      className={`mt-0.5 shrink-0 rounded-full p-1 ${
+                                        isPresent ? 'bg-emerald-500/15 text-emerald-600' : 'bg-slate-700/40 text-slate-300'
+                                      }`}
+                                    >
+                                      {isPresent ? (
+                                        <CircleCheckBig className="h-4 w-4" />
+                                      ) : (
+                                        <Circle className="h-4 w-4" />
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className={`mt-2 text-[11px] font-bold ${
+                                    isPresent ? 'text-emerald-600' : isRetired ? 'text-slate-200' : 'text-rose-300'
+                                  }`}>
+                                    {getStatusLabel(participant.status)}
+                                  </div>
+                                </button>
+                              );
+                            })}
                           </div>
-
-                          {/* Right: Toggle Button & Actions */}
-                          <div className="flex items-center gap-1 shrink-0">
-                            {/* Note button */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingNoteId(p.id);
-                                setEditingNoteText(p.note || '');
-                              }}
-                              title="Thêm ghi chú/lý do vắng"
-                              className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-
-                            {/* 1-Tap Toggle Presence Button */}
-                            <button
-                              type="button"
-                              onClick={() => onToggleStatus(p.id)}
-                              className={`px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-2xs ${
-                                isPresent
-                                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                                  : 'bg-rose-100 hover:bg-rose-200 text-rose-700 border border-rose-200'
-                              }`}
-                            >
-                              {isPresent ? (
-                                <>
-                                  <Check className="w-3.5 h-3.5 stroke-[3]" />
-                                  <span>Có mặt</span>
-                                </>
-                              ) : (
-                                <>
-                                  <X className="w-3.5 h-3.5 stroke-[3]" />
-                                  <span>Vắng mặt</span>
-                                </>
-                              )}
-                            </button>
-
-                            {/* Delete student from class */}
-                            <button
-                              type="button"
-                              onClick={() => onRemoveStudent(p.id)}
-                              title="Xóa khỏi danh sách"
-                              className="p-1.5 rounded-lg text-gray-300 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
@@ -532,64 +560,35 @@ export function AttendanceSheet({
               </form>
             )}
 
-            {/* Note Edit Modal Overlay */}
-            {editingNoteId && (
-              <div className="absolute inset-0 bg-black/30 backdrop-blur-xs z-30 flex items-center justify-center p-4">
-                <div className="bg-white rounded-3xl p-5 w-full max-w-sm shadow-2xl border border-gray-100 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-bold text-sm text-gray-900">Ghi chú điểm danh</h4>
+            {longPressParticipant && (
+              <div className="absolute inset-0 bg-black/40 backdrop-blur-xs z-30 flex items-end sm:items-center justify-center p-4">
+                <div className="w-full max-w-sm rounded-3xl border border-slate-700 bg-[#112238] p-4 shadow-2xl">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-black text-white">Đổi trạng thái học viên</h4>
+                      <p className="mt-1 text-xs text-slate-300">{longPressParticipant.name}</p>
+                    </div>
                     <button
                       type="button"
-                      onClick={() => setEditingNoteId(null)}
-                      className="p-1 text-gray-400 hover:text-gray-600"
+                      onClick={() => setLongPressParticipant(null)}
+                      className="rounded-full p-1 text-slate-400 hover:bg-slate-800 hover:text-white"
+                      aria-label="Đóng chọn trạng thái"
                     >
-                      <X className="w-4 h-4" />
+                      <X className="h-4 w-4" />
                     </button>
                   </div>
 
-                  <p className="text-xs text-gray-500">
-                    Học sinh: <span className="font-bold text-gray-800">{participants.find(p => p.id === editingNoteId)?.name}</span>
-                  </p>
-
-                  <input
-                    type="text"
-                    value={editingNoteText}
-                    onChange={(e) => setEditingNoteText(e.target.value)}
-                    placeholder="Ví dụ: Có phép, Bị sốt, Đến trễ 15p..."
-                    className="w-full px-3.5 py-2.5 rounded-2xl bg-gray-50 border border-gray-200 text-sm text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-medium"
-                    autoFocus
-                  />
-
-                  <div className="flex items-center gap-1.5 pt-1">
-                    {['Có phép', 'Không phép', 'Đến muộn', 'Nghỉ ốm'].map((tag) => (
-                      <button
-                        key={tag}
-                        type="button"
-                        onClick={() => setEditingNoteText(tag)}
-                        className="text-[10px] font-bold px-2 py-1 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200"
-                      >
-                        {tag}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setEditingNoteId(null)}
-                      className="flex-1 py-2 px-3 rounded-xl font-bold text-xs text-gray-700 bg-gray-100 hover:bg-gray-200"
-                    >
-                      Hủy
-                    </button>
+                  <div className="mt-4 space-y-2">
                     <button
                       type="button"
                       onClick={() => {
-                        onUpdateNote(editingNoteId, editingNoteText.trim());
-                        setEditingNoteId(null);
+                        onSetStatus(longPressParticipant.id, 'retired');
+                        setLongPressParticipant(null);
                       }}
-                      className="flex-1 py-2 px-3 rounded-xl font-bold text-xs text-white bg-indigo-600 hover:bg-indigo-700"
+                      className="flex w-full items-center justify-between rounded-2xl border border-slate-600 bg-slate-800/70 px-4 py-3 text-left text-white hover:border-slate-400 hover:bg-slate-700"
                     >
-                      Lưu ghi chú
+                      <span className="text-sm font-bold">Đã nghỉ</span>
+                      <span className="text-xs text-slate-300">Chuyển sang danh sách riêng</span>
                     </button>
                   </div>
                 </div>
@@ -597,16 +596,12 @@ export function AttendanceSheet({
             )}
 
             {/* Footer Summary & Done Button */}
-            <div className="p-4 border-t border-gray-100 bg-white flex items-center justify-between gap-3 shrink-0">
-              <div className="text-xs text-gray-500">
-                <span className="font-bold text-emerald-600">{presentCount}</span> có mặt •{' '}
-                <span className="font-bold text-rose-600">{absentCount}</span> vắng mặt
-              </div>
+            <div className="p-4 border-t border-slate-800 bg-[#112238] flex justify-end shrink-0">
               <button
                 type="button"
                 id="done-attendance-btn"
                 onClick={onClose}
-                className="py-2.5 px-5 rounded-2xl font-bold text-sm text-white bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] transition-all shadow-xs"
+                className="py-2.5 px-5 rounded-2xl font-bold text-sm text-[#1B2A3E] bg-[#D9B472] hover:bg-[#C9A461] active:scale-[0.98] transition-all shadow-xs"
               >
                 Xong (Lưu điểm danh)
               </button>

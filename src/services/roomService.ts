@@ -184,7 +184,7 @@ export async function updateParticipantTeamInDB(
 
 export async function updateParticipantStatusInDB(
   participantId: string,
-  status: 'present' | 'absent',
+  status: 'present' | 'absent' | 'retired',
   note?: string
 ) {
   try {

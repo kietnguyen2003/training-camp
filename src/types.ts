@@ -14,7 +14,7 @@ export interface Participant {
   avatar?: string;
   teamId: string | null; // null means unassigned
   level: number;
-  status: 'present' | 'absent'; // 'present' (Có mặt) or 'absent' (Vắng mặt)
+  status: 'present' | 'absent' | 'retired'; // 'present' (Có mặt), 'absent' (Vắng mặt), 'retired' (Đã nghỉ)
   studentCode?: string;
   note?: string;
   updatedAt?: number;
