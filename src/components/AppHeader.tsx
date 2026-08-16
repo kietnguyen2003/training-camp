@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { Shield, Eye, CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
+import { Shield, CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 import { User, Room, ToastMessage } from '../types';
 import { LiveIndicator } from './LiveIndicator';
 import logoImg from '../../assets/image.png';
@@ -19,7 +19,6 @@ export function AppHeader({
   onDismissToast,
   onOpenUserMenu,
 }: AppHeaderProps) {
-  const isHost = user.role === 'host';
   const activeToast = toasts.length > 0 ? toasts[toasts.length - 1] : null;
 
   return (
@@ -92,23 +91,10 @@ export function AppHeader({
 
           {/* Mode Pill */}
           <div
-            className={`hidden xs:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold border transition-colors ${
-              isHost
-                ? 'bg-[#D9B472]/15 text-[#E6C587] border-[#D9B472]/40'
-                : 'bg-sky-500/15 text-sky-300 border-sky-500/40'
-            }`}
+            className="hidden xs:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold border transition-colors bg-[#D9B472]/15 text-[#E6C587] border-[#D9B472]/40"
           >
-            {isHost ? (
-              <>
-                <Shield className="w-3.5 h-3.5 text-[#D9B472]" />
-                <span>QUẢN TRỊ (HOST)</span>
-              </>
-            ) : (
-              <>
-                <Eye className="w-3.5 h-3.5 text-sky-400" />
-                <span>XEM (VIEWER)</span>
-              </>
-            )}
+            <Shield className="w-3.5 h-3.5 text-[#D9B472]" />
+            <span>QUẢN TRỊ (HOST)</span>
           </div>
 
           {/* User Avatar Button */}
@@ -131,9 +117,7 @@ export function AppHeader({
                 </div>
               )}
               <span
-                className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#1B2A3E] ${
-                  isHost ? 'bg-[#D9B472]' : 'bg-sky-400'
-                }`}
+                className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#1B2A3E] bg-[#D9B472]"
               />
             </div>
           </button>
@@ -142,4 +126,3 @@ export function AppHeader({
     </header>
   );
 }
-

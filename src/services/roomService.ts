@@ -1,6 +1,7 @@
 import { supabase } from '../supabaseClient';
 import { Participant, Room, Team, UserRole } from '../types';
 import { INITIAL_ROOM, INITIAL_TEAMS, INITIAL_PARTICIPANTS } from '../mockData';
+import { getRoomRealtimeBindings } from './roomRealtime';
 
 export interface UserProfile {
   id: string;
@@ -301,21 +302,13 @@ export function subscribeToRoomChanges(
   roomId: string,
   onParticipantChange: () => void
 ) {
-  const channel = supabase
-    .channel(`room-realtime-${roomId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'participants',
-        filter: `room_id=eq.${roomId}`,
-      },
-      () => {
+  const channel = getRoomRealtimeBindings(roomId).reduce(
+    (activeChannel, binding) =>
+      activeChannel.on('postgres_changes', binding, () => {
         onParticipantChange();
-      }
-    )
-    .subscribe();
+      }),
+    supabase.channel(`room-realtime-${roomId}`)
+  ).subscribe();
 
   return () => {
     supabase.removeChannel(channel);

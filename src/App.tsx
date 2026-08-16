@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Eye } from 'lucide-react';
 import {
   User,
   Room,
@@ -18,7 +17,6 @@ import { TeamGrid2x2 } from './components/TeamGrid2x2';
 import { LevelGrid2x2 } from './components/LevelGrid2x2';
 import { HostActionBar } from './components/HostActionBar';
 import { MoveMemberSheet } from './components/MoveMemberSheet';
-import { ShareRoomSheet } from './components/ShareRoomSheet';
 import { ResetConfirmationSheet } from './components/ResetConfirmationSheet';
 import { AddParticipantSheet } from './components/AddParticipantSheet';
 import { AttendanceSheet } from './components/AttendanceSheet';
@@ -29,8 +27,6 @@ import { ToastContainer } from './components/Toast';
 import { RoomSkeleton } from './components/RoomSkeleton';
 import { supabase } from './supabaseClient';
 import {
-  getUserProfile,
-  upsertUserProfile,
   fetchInitialRoomData,
   updateParticipantTeamInDB,
   updateParticipantStatusInDB,
@@ -42,6 +38,12 @@ import {
   updateParticipantLevelInDB,
   subscribeToRoomChanges,
 } from './services/roomService';
+import { assignPresentParticipantsToTeams } from './services/levelAssignment';
+import {
+  clearHostSession,
+  getStoredHostSession,
+  persistHostSession,
+} from './utils/hostAuth';
 
 export default function App() {
   // App State
@@ -78,65 +80,41 @@ export default function App() {
     };
   }, [room.id, reloadRoomData]);
 
-  // Supabase Auth listener + user_roles Database lookup
+  // Local host access session
   useEffect(() => {
-    const handleSession = async (session: any) => {
-      if (session?.user) {
-        setIsLoading(true);
-        const userId = session.user.id;
-        const userEmail = session.user.email || '';
-        const fullName = session.user.user_metadata?.full_name || session.user.user_metadata?.name || userEmail.split('@')[0] || 'User';
-        const avatarUrl = session.user.user_metadata?.avatar_url;
+    const hasSession = getStoredHostSession();
 
-        // 1. Fetch user role from user_roles table
-        let profile = await getUserProfile(userId);
+    if (hasSession) {
+      setUser(INITIAL_USER);
+      setIsLoggedIn(true);
+    } else {
+      setIsLoggedIn(false);
+    }
 
-        // 2. If profile does not exist yet in DB, create it with selected role
-        if (!profile) {
-          profile = await upsertUserProfile({
-            id: userId,
-            email: userEmail,
-            full_name: fullName,
-            avatar_url: avatarUrl,
-            role: 'viewer',
-          });
-        }
-
-        const activeRole = profile?.role || 'viewer';
-
-        setUser({
-          id: userId,
-          name: profile?.full_name || fullName,
-          email: userEmail,
-          avatar: profile?.avatar_url || avatarUrl,
-          role: activeRole,
-        });
-
-        setIsLoggedIn(true);
-        setIsLoading(false);
-      } else {
-        setIsLoggedIn(false);
-      }
-      setIsCheckingAuth(false);
-    };
-
-    // Check existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      handleSession(session);
-    });
-
-    // Listen to Auth State changes (Google Callback)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      handleSession(session);
-    });
-
-    return () => subscription.unsubscribe();
+    setIsLoading(false);
+    setIsCheckingAuth(false);
   }, []);
+
+  const handleHostLogin = () => {
+    persistHostSession();
+    setUser(INITIAL_USER);
+    setIsLoggedIn(true);
+    setIsCheckingAuth(false);
+    showToast('Đã vào chế độ host', 'success');
+  };
+
+  const handleSignOut = async () => {
+    clearHostSession();
+    setActiveSheet(null);
+    setIsLoggedIn(false);
+    setUser(INITIAL_USER);
+    showToast('Đã đăng xuất', 'info');
+  };
 
   // Interaction State
   const [recentlyMovedId, setRecentlyMovedId] = useState<string | null>(null);
   const [activeSheet, setActiveSheet] = useState<
-    'move' | 'share' | 'reset' | 'user' | 'add' | 'attendance' | 'assignPresent' | null
+    'move' | 'reset' | 'user' | 'add' | 'attendance' | 'assignPresent' | null
   >(null);
   const [selectedParticipantForMove, setSelectedParticipantForMove] =
     useState<Participant | null>(null);
@@ -169,6 +147,27 @@ export default function App() {
 
   const getTeamMemberCount = (teamId: string) =>
     participants.filter((p) => p.teamId === teamId).length;
+
+  if (isCheckingAuth) {
+    return (
+      <div className="h-[100dvh] bg-[rgb(203,180,139)] flex items-center justify-center p-6 text-slate-100">
+        <div className="w-full max-w-md">
+          <RoomSkeleton />
+        </div>
+      </div>
+    );
+  }
+
+  if (!isLoggedIn) {
+    return (
+      <>
+        <LoginScreen onSuccess={handleHostLogin} onError={(msg) => showToast(msg, 'warning')} />
+        <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      </>
+    );
+  }
+
+  const isHost = true;
 
   // Move Participant handler
   const handleSelectDestination = (
@@ -249,7 +248,6 @@ export default function App() {
 
   // Open Move Sheet
   const handleOpenMoveSheet = (participant: Participant) => {
-    if (user.role !== 'host') return;
     setSelectedParticipantForMove(participant);
     setActiveSheet('move');
   };
@@ -344,19 +342,12 @@ export default function App() {
 
   // Shuffle Action (Only shuffles PRESENT unassigned members!)
   const handleShuffle = async () => {
-    if (presentUnassigned.length === 0) {
+    const updates = assignPresentParticipantsToTeams(participants, teams);
+
+    if (updates.length === 0) {
       showToast('Không có học sinh có mặt nào đang chờ chia nhóm', 'warning');
       return;
     }
-
-    const updates: { id: string; teamId: string | null }[] = presentUnassigned.map((participant) => {
-      const targetTeam = teams[participant.level] || null;
-
-      return {
-        id: participant.id,
-        teamId: targetTeam?.id || null,
-      };
-    });
 
     // Optimistic UI Update
     setParticipants((prev) =>
@@ -370,7 +361,7 @@ export default function App() {
     await batchUpdateParticipantTeamsInDB(updates);
 
     setRoom((prev) => ({ ...prev, lastUpdated: 'vừa xong' }));
-    showToast(`Đã xếp ${presentUnassigned.length} học sinh vào sân theo level`, 'success');
+    showToast(`Đã xếp ${updates.length} học sinh có mặt vào sân theo level`, 'success');
   };
 
   // Reset Action
@@ -392,14 +383,11 @@ export default function App() {
 
   // Quick Add Member to specific team
   const handleQuickAddTeamMember = (teamId: string) => {
-    if (user.role !== 'host') return;
     setTargetTeamForAdd(teamId);
     setActiveSheet('add');
   };
 
   const handleOpenPresentPickerForTeam = (teamId: string) => {
-    if (user.role !== 'host') return;
-
     const targetTeam = teams.find((team) => team.id === teamId) || null;
     if (!targetTeam) return;
 
@@ -417,30 +405,6 @@ export default function App() {
     handleSelectDestination(participantId, targetTeamForPresentAssign.id);
   };
 
-  // Sign out handler
-  const handleSignOut = async () => {
-    setActiveSheet(null);
-    await supabase.auth.signOut();
-    setIsLoggedIn(false);
-    showToast('Đã đăng xuất', 'info');
-  };
-
-  if (isCheckingAuth) {
-    return (
-      <div className="h-[100dvh] bg-[rgb(203,180,139)] flex items-center justify-center p-6 text-slate-100">
-        <div className="w-full max-w-md">
-          <RoomSkeleton />
-        </div>
-      </div>
-    );
-  }
-
-  if (!isLoggedIn) {
-    return <LoginScreen onError={(msg) => showToast(msg, 'warning')} />;
-  }
-
-  const isHost = user.role === 'host';
-
   return (
     <div className="h-[100dvh] max-h-[100dvh] bg-[#F7F3E9] text-slate-100 flex flex-col selection:bg-amber-500/20 overflow-hidden">
       {/* Top App Header with Header-Slot Toasts */}
@@ -455,30 +419,12 @@ export default function App() {
       {/* Main Content Area */}
       <main
         id="main-room-content"
-        className={`flex-1 max-w-4xl mx-auto w-full px-2 sm:px-4 pt-1.5 sm:pt-2 flex flex-col min-h-0 overflow-hidden ${
-          isHost ? 'pb-16 sm:pb-18' : 'pb-4'
-        }`}
+        className="flex-1 max-w-4xl mx-auto w-full px-2 sm:px-4 pt-1.5 sm:pt-2 flex flex-col min-h-0 overflow-hidden pb-16 sm:pb-18"
       >
         {isLoading ? (
           <RoomSkeleton />
         ) : (
           <div className="flex-1 flex flex-col min-h-0 space-y-1.5">
-            {/* Viewer Mode Banner */}
-            {!isHost && (
-              <div
-                id="viewer-mode-banner"
-                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#112238] border border-slate-700/80 shadow-md text-xs text-slate-300 shrink-0"
-              >
-                <div className="w-5 h-5 rounded-md bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0 border border-sky-500/30">
-                  <Eye className="w-3.5 h-3.5" />
-                </div>
-                <div className="min-w-0 flex-1 truncate">
-                  <span className="font-bold text-white">Chế độ Người xem: </span>
-                  <span>Đang theo dõi cập nhật thời gian thực từ Supabase</span>
-                </div>
-              </div>
-            )}
-
             {/* 4 Groups Grid 2x2 */}
             <div className="flex-1 flex flex-col min-h-0">
               <div className="flex items-center gap-2 px-1 pb-2 shrink-0">
@@ -548,7 +494,6 @@ export default function App() {
           onShuffle={handleShuffle}
           onOpenAttendance={() => setActiveSheet('attendance')}
           onOpenReset={() => setActiveSheet('reset')}
-          onOpenShare={() => setActiveSheet('share')}
           onOpenAddMember={() => {
             setTargetTeamForAdd(null);
             setActiveSheet('add');
@@ -582,14 +527,6 @@ export default function App() {
         }}
         onSelectDestination={handleSelectDestination}
         onToggleStatus={handleToggleAttendance}
-      />
-
-      {/* Bottom Sheet: Share Room */}
-      <ShareRoomSheet
-        isOpen={activeSheet === 'share'}
-        room={room}
-        onClose={() => setActiveSheet(null)}
-        onShowToast={showToast}
       />
 
       {/* Bottom Sheet: Reset Confirmation */}

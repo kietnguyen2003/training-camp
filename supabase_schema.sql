@@ -62,7 +62,18 @@ CREATE TABLE IF NOT EXISTS public.teams (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. Create participants table
+-- 4. Create levels table
+CREATE TABLE IF NOT EXISTS public.levels (
+  id TEXT PRIMARY KEY,
+  room_id TEXT REFERENCES public.rooms(id) ON DELETE CASCADE,
+  number INT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (room_id, number)
+);
+
+-- 5. Create participants table
 CREATE TABLE IF NOT EXISTS public.participants (
   id TEXT PRIMARY KEY,
   room_id TEXT REFERENCES public.rooms(id) ON DELETE CASCADE,
@@ -79,31 +90,47 @@ CREATE TABLE IF NOT EXISTS public.participants (
 
 ALTER TABLE public.participants ADD COLUMN IF NOT EXISTS level INT NOT NULL DEFAULT 0;
 
--- 5. Enable Full Replica Identity for Realtime tracking
+-- 6. Enable Full Replica Identity for Realtime tracking
 ALTER TABLE public.rooms REPLICA IDENTITY FULL;
 ALTER TABLE public.teams REPLICA IDENTITY FULL;
+ALTER TABLE public.levels REPLICA IDENTITY FULL;
 ALTER TABLE public.participants REPLICA IDENTITY FULL;
 ALTER TABLE public.user_roles REPLICA IDENTITY FULL;
 
--- 6. Add tables to Supabase Realtime publication
+-- 7. Add tables to Supabase Realtime publication
 DROP PUBLICATION IF EXISTS supabase_realtime;
-CREATE PUBLICATION supabase_realtime FOR TABLE public.rooms, public.teams, public.participants, public.user_roles;
+CREATE PUBLICATION supabase_realtime FOR TABLE public.rooms, public.teams, public.levels, public.participants, public.user_roles;
 
--- 7. Enable Row Level Security (RLS)
+-- 8. Enable Row Level Security (RLS)
 ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.rooms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.teams ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.levels ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.participants ENABLE ROW LEVEL SECURITY;
 
--- 8. RLS Policies
+-- 9. RLS Policies
+DROP POLICY IF EXISTS "Allow public read access to user_roles" ON public.user_roles;
+DROP POLICY IF EXISTS "Allow users to update own role" ON public.user_roles;
+DROP POLICY IF EXISTS "Allow users to insert own role" ON public.user_roles;
+DROP POLICY IF EXISTS "Allow public read access to rooms" ON public.rooms;
+DROP POLICY IF EXISTS "Allow public read access to teams" ON public.teams;
+DROP POLICY IF EXISTS "Allow public read access to levels" ON public.levels;
+DROP POLICY IF EXISTS "Allow public read access to participants" ON public.participants;
+DROP POLICY IF EXISTS "Allow all access to rooms" ON public.rooms;
+DROP POLICY IF EXISTS "Allow all access to teams" ON public.teams;
+DROP POLICY IF EXISTS "Allow all access to levels" ON public.levels;
+DROP POLICY IF EXISTS "Allow all access to participants" ON public.participants;
+
 CREATE POLICY "Allow public read access to user_roles" ON public.user_roles FOR SELECT USING (true);
 CREATE POLICY "Allow users to update own role" ON public.user_roles FOR UPDATE USING (auth.uid() = id);
 CREATE POLICY "Allow users to insert own role" ON public.user_roles FOR INSERT WITH CHECK (auth.uid() = id);
 
 CREATE POLICY "Allow public read access to rooms" ON public.rooms FOR SELECT USING (true);
 CREATE POLICY "Allow public read access to teams" ON public.teams FOR SELECT USING (true);
+CREATE POLICY "Allow public read access to levels" ON public.levels FOR SELECT USING (true);
 CREATE POLICY "Allow public read access to participants" ON public.participants FOR SELECT USING (true);
 
 CREATE POLICY "Allow all access to rooms" ON public.rooms FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access to teams" ON public.teams FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access to levels" ON public.levels FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access to participants" ON public.participants FOR ALL USING (true) WITH CHECK (true);

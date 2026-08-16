@@ -80,14 +80,14 @@ export function UserMenuModal({
           </div>
 
           <div className="py-4 space-y-4">
-            {/* Google Authentication note */}
+            {/* Host access note */}
             <div className="p-3 rounded-2xl bg-[#112238] border border-slate-700/80 text-xs text-slate-300 space-y-1">
               <div className="flex items-center gap-1.5 font-semibold text-white">
                 <UserCheck className="w-3.5 h-3.5 text-amber-400" />
-                <span>Đã đăng nhập bằng Google</span>
+                <span>Đang ở chế độ host</span>
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                Quyền hiện tại của bạn là <code className="text-amber-300">{user.role}</code>. Muốn đổi quyền, cập nhật cột <code className="text-amber-300">role</code> trong bảng <code className="text-amber-300">user_roles</code> trên Supabase.
+                Phiên đăng nhập này được mở bằng mã truy cập host và chỉ lưu cục bộ trên thiết bị hiện tại.
               </p>
             </div>
 

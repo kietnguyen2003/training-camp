@@ -1,4 +1,4 @@
-import { Shuffle, RotateCcw, Share2, UserPlus, UserCheck } from 'lucide-react';
+import { Shuffle, RotateCcw, UserPlus, UserCheck } from 'lucide-react';
 
 interface HostActionBarProps {
   unassignedCount: number;
@@ -7,7 +7,6 @@ interface HostActionBarProps {
   onShuffle: () => void;
   onOpenAttendance: () => void;
   onOpenReset: () => void;
-  onOpenShare: () => void;
   onOpenAddMember: () => void;
 }
 
@@ -18,7 +17,6 @@ export function HostActionBar({
   onShuffle,
   onOpenAttendance,
   onOpenReset,
-  onOpenShare,
   onOpenAddMember,
 }: HostActionBarProps) {
   return (
@@ -69,18 +67,6 @@ export function HostActionBar({
           <UserPlus className="w-4 h-4" />
         </button>
 
-        {/* Share Button */}
-        <button
-          type="button"
-          id="host-action-share-btn"
-          onClick={onOpenShare}
-          className="w-10 h-10 rounded-full bg-[#27384E] hover:bg-[#324763] text-slate-200 border border-slate-600/50 flex items-center justify-center transition-all shrink-0 cursor-pointer active:scale-95"
-          title="Chia sẻ mã phòng"
-          aria-label="Chia sẻ mã phòng"
-        >
-          <Share2 className="w-4 h-4" />
-        </button>
-
         {/* Reset Button */}
         <button
           type="button"
@@ -96,4 +82,3 @@ export function HostActionBar({
     </div>
   );
 }
-

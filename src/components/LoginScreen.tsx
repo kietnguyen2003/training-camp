@@ -1,78 +1,31 @@
-import { useState } from 'react';
+import { FormEvent, useState } from 'react';
 import { motion } from 'motion/react';
 import { Zap, RefreshCw } from 'lucide-react';
-import { GoogleLoginButton } from './GoogleLoginButton';
 import logoImg from '../../assets/image.png';
-import { supabase } from '../supabaseClient';
+import { isValidHostCode } from '../utils/hostAuth';
 
 interface LoginScreenProps {
+  onSuccess: () => void;
   onError?: (msg: string) => void;
 }
 
-function resolveOAuthRedirectUrl() {
-  const currentUrl = new URL(window.location.pathname, window.location.origin);
-  const isCurrentHostLocal =
-    currentUrl.hostname === 'localhost' || currentUrl.hostname === '127.0.0.1';
-  const configuredUrl = import.meta.env.VITE_PUBLIC_SITE_URL?.trim();
-
-  if (!configuredUrl) {
-    return currentUrl.toString();
-  }
-
-  try {
-    const parsedConfiguredUrl = new URL(configuredUrl);
-    const isConfiguredHostLocal =
-      parsedConfiguredUrl.hostname === 'localhost' ||
-      parsedConfiguredUrl.hostname === '127.0.0.1';
-
-    if (configuredUrl.includes('/auth/v1/callback')) {
-      console.warn(
-        'Ignoring VITE_PUBLIC_SITE_URL because it points to the Supabase callback URL. Use your app URL instead.'
-      );
-      return currentUrl.toString();
-    }
-
-    if (!isCurrentHostLocal && isConfiguredHostLocal) {
-      console.warn(
-        'Ignoring localhost VITE_PUBLIC_SITE_URL on a deployed origin. Using the current browser origin instead.'
-      );
-      return currentUrl.toString();
-    }
-
-    return new URL(parsedConfiguredUrl.pathname || '/', parsedConfiguredUrl.origin).toString();
-  } catch {
-    console.warn(
-      'Ignoring invalid VITE_PUBLIC_SITE_URL value. Using the current browser origin instead.'
-    );
-  }
-
-  return currentUrl.toString();
-}
-
-export function LoginScreen({ onError }: LoginScreenProps) {
+export function LoginScreen({ onSuccess, onError }: LoginScreenProps) {
   const [isConnecting, setIsConnecting] = useState(false);
+  const [accessCode, setAccessCode] = useState('');
 
-  const handleGoogleLogin = async () => {
-    try {
-      setIsConnecting(true);
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsConnecting(true);
 
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: resolveOAuthRedirectUrl(),
-        },
-      });
-
-      if (error) {
-        console.error('Supabase OAuth error:', error);
-        setIsConnecting(false);
-        if (onError) onError(error.message);
-      }
-    } catch (err: any) {
-      console.error('Login exception:', err);
+    if (!isValidHostCode(accessCode)) {
       setIsConnecting(false);
-      if (onError) onError(err.message || 'Đăng nhập bằng Google thất bại');
+      if (onError) onError('Mã truy cập không đúng');
+      return;
     }
+
+    onSuccess();
+    setAccessCode('');
+    setIsConnecting(false);
   };
 
   return (
@@ -115,23 +68,39 @@ export function LoginScreen({ onError }: LoginScreenProps) {
           Chào mừng đến với Neverland Training Camp
         </p>
 
-        {/* Google Authentication Action */}
-        <div className="w-full space-y-3 mt-8">
-          <GoogleLoginButton
-            onClick={handleGoogleLogin}
-            isLoading={isConnecting}
-            text={
-              isConnecting ? (
-                <span className="flex items-center gap-2">
-                  <RefreshCw className="w-4 h-4 animate-spin text-[#1B2A3E]" />
-                  Đang đăng nhập bằng Google...
-                </span>
-              ) : (
-                'Đăng nhập bằng Google'
-              )
-            }
-          />
-        </div>
+        <form className="w-full space-y-3 mt-8" onSubmit={handleSubmit}>
+          <label htmlFor="host-access-code" className="block text-left">
+            <span className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-300">
+              Mã truy cập host
+            </span>
+            <input
+              id="host-access-code"
+              type="password"
+              inputMode="numeric"
+              autoComplete="off"
+              value={accessCode}
+              onChange={(event) => setAccessCode(event.target.value)}
+              placeholder="Nhập mã"
+              className="mt-2 w-full rounded-2xl border border-slate-600 bg-[#111C2B] px-4 py-3.5 text-center text-xl font-black tracking-[0.32em] text-white outline-hidden placeholder:text-slate-500 focus:border-[#D9B472]"
+            />
+          </label>
+
+          <button
+            id="host-sign-in-btn"
+            type="submit"
+            disabled={isConnecting}
+            className="w-full flex items-center justify-center gap-3 py-3.5 px-6 rounded-full bg-[#D9B472] hover:bg-[#C9A461] text-[#1B2A3E] font-black text-base shadow-md active:scale-[0.98] transition-all min-h-[52px] cursor-pointer border border-[#E6C587]"
+          >
+            {isConnecting ? (
+              <span className="flex items-center gap-2">
+                <RefreshCw className="w-4 h-4 animate-spin text-[#1B2A3E]" />
+                Đang xác thực...
+              </span>
+            ) : (
+              'Vào trang host'
+            )}
+          </button>
+        </form>
       </motion.div>
 
       <div />

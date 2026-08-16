@@ -132,7 +132,6 @@ export function LevelGrid2x2({
                 </div>
               ) : (
                 members.map((member) => {
-                  const isAbsent = member.status === 'absent';
                   const isDraggingThis = draggingStudentId === member.id;
                   const isRecentlyMoved = recentlyMovedId === member.id;
 
@@ -163,14 +162,10 @@ export function LevelGrid2x2({
                           ? 'bg-amber-500/20 border-amber-400 ring-2 ring-amber-400/50 shadow-xs'
                           : isRecentlyMoved
                           ? 'bg-amber-500/20 border-amber-400 ring-2 ring-amber-400/50 shadow-xs'
-                          : isAbsent
-                          ? 'bg-rose-500/10 border-rose-500/30 text-rose-300'
                           : 'bg-[#0D1B2E] hover:bg-slate-800 border-slate-800 shadow-xs text-slate-100'
                       } ${isHost ? 'cursor-grab active:cursor-grabbing' : ''}`}
                     >
-                      <span className={`text-xs sm:text-sm font-semibold truncate flex-1 ${
-                        isAbsent ? 'line-through text-rose-300 opacity-75' : 'text-slate-100'
-                      }`}>
+                      <span className="text-xs sm:text-sm font-semibold truncate flex-1 text-slate-100">
                         {member.name}
                       </span>
 
