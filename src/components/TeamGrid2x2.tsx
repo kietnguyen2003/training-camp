@@ -99,6 +99,7 @@ export function TeamGrid2x2({
         const members = participants.filter((p) => p.teamId === team.id);
         const isDragOver = dragOverTeamId === team.id;
         const { colorScheme } = team;
+        const courtLabel = team.lead.name || team.name;
 
         return (
           <div
@@ -126,7 +127,7 @@ export function TeamGrid2x2({
                 <h3
                   className={`text-sm sm:text-base font-extrabold tracking-tight leading-none truncate ${colorScheme.headerText}`}
                 >
-                  {team.name}
+                  {courtLabel}
                 </h3>
               </div>
 
@@ -147,7 +148,7 @@ export function TeamGrid2x2({
                       onQuickAddMember(team.id);
                     }}
                     className="w-6 h-6 rounded-full bg-[#1B2A3E] hover:bg-slate-800 text-[#D9B472] border border-slate-700 flex items-center justify-center transition-all active:scale-90 cursor-pointer shadow-xs"
-                    title={`Thêm học viên vào ${team.name}`}
+                    title={`Thêm học viên vào sân ${courtLabel}`}
                   >
                     <UserPlus className="w-3 h-3" />
                   </button>
@@ -161,7 +162,7 @@ export function TeamGrid2x2({
               {isDragOver && (
                 <div className="py-1.5 px-3 rounded-full border-2 border-dashed border-[#D9B472] bg-amber-100/80 text-center text-xs font-bold text-amber-900 animate-pulse flex items-center justify-center gap-1.5 shrink-0">
                   <Sparkles className="w-3.5 h-3.5 text-amber-700" />
-                  <span>Thả vào {team.name}</span>
+                  <span>Thả vào sân {courtLabel}</span>
                 </div>
               )}
 
