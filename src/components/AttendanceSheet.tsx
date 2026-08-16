@@ -206,7 +206,7 @@ export function AttendanceSheet({
             </div>
 
             {/* Sub-navigation tabs: List vs Add vs Import */}
-            <div className="flex items-center px-3.5 sm:px-4 pt-2.5 gap-1.5 border-b border-slate-800 shrink-0 pb-2 bg-[#0D1B2E]">
+            <div className="flex items-center gap-1.5 overflow-x-auto px-3.5 sm:px-4 pt-2 pb-2 border-b border-slate-800 shrink-0 bg-[#0D1B2E] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <button
                 type="button"
                 onClick={() => setActiveTabMode('list')}
@@ -263,15 +263,15 @@ export function AttendanceSheet({
             {/* CONTENT VIEWS */}
             {(activeTabMode === 'list' || activeTabMode === 'retired') && (
               <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                <div className="p-3 px-4 space-y-3 border-b border-slate-800 bg-[#0D1B2E] shrink-0">
+                <div className="p-2.5 px-3.5 space-y-2 border-b border-slate-800 bg-[#0D1B2E] shrink-0">
                   <div className="relative">
-                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
                       placeholder="Tìm theo tên hoặc mã học viên"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full bg-[#112238] border border-slate-700/80 pl-9 pr-8 py-2 rounded-xl text-xs text-white placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 font-medium"
+                      className="w-full bg-[#112238] border border-slate-700/80 pl-8.5 pr-8 py-1.5 rounded-lg text-[11px] text-white placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 font-medium"
                     />
                     {searchQuery && (
                       <button
@@ -285,12 +285,12 @@ export function AttendanceSheet({
                   </div>
 
                   {activeTabMode === 'list' && (
-                    <div className="flex items-center justify-between gap-2 flex-wrap pt-0.5">
-                      <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                      <div className="flex items-center gap-1 shrink-0">
                         <button
                           type="button"
                           onClick={() => setFilterTab('all')}
-                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                          className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer whitespace-nowrap ${
                             filterTab === 'all'
                               ? 'bg-amber-400 text-slate-950'
                               : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
@@ -301,7 +301,7 @@ export function AttendanceSheet({
                         <button
                           type="button"
                           onClick={() => setFilterTab('present')}
-                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                          className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer whitespace-nowrap ${
                             filterTab === 'present'
                               ? 'bg-sky-500 text-white'
                               : 'bg-sky-500/20 text-sky-300 hover:bg-sky-500/30'
@@ -312,7 +312,7 @@ export function AttendanceSheet({
                         <button
                           type="button"
                           onClick={() => setFilterTab('absent')}
-                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                          className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer whitespace-nowrap ${
                             filterTab === 'absent'
                               ? 'bg-rose-500 text-white'
                               : 'bg-rose-500/20 text-rose-300 hover:bg-rose-500/30'
@@ -322,24 +322,22 @@ export function AttendanceSheet({
                         </button>
                       </div>
 
-                      <div className="flex items-center gap-1.5 ml-auto">
+                      <div className="ml-auto flex items-center gap-1 shrink-0">
                         <button
                           type="button"
                           onClick={() => onMarkAllStatus('present')}
-                          className="text-[11px] font-bold text-sky-300 hover:text-sky-200 bg-sky-500/20 hover:bg-sky-500/30 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                          className="h-7 w-7 rounded-lg flex items-center justify-center text-sky-300 hover:text-sky-200 bg-sky-500/20 hover:bg-sky-500/30 transition-colors cursor-pointer"
                           title="Đánh dấu tất cả có mặt"
                         >
                           <CheckCheck className="w-3.5 h-3.5" />
-                          <span>All co mat</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => onMarkAllStatus('absent')}
-                          className="text-[11px] font-bold text-rose-300 hover:text-rose-200 bg-rose-500/15 hover:bg-rose-500/25 active:bg-rose-500/30 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                          className="h-7 w-7 rounded-lg flex items-center justify-center text-rose-300 hover:text-rose-200 bg-rose-500/15 hover:bg-rose-500/25 active:bg-rose-500/30 transition-colors cursor-pointer"
                           title="Đánh dấu tất cả vắng"
                         >
                           <Circle className="w-3.5 h-3.5" />
-                          <span>All vang</span>
                         </button>
                       </div>
                     </div>
@@ -385,7 +383,12 @@ export function AttendanceSheet({
                                   onPointerUp={clearLongPressTimer}
                                   onPointerLeave={clearLongPressTimer}
                                   onPointerCancel={clearLongPressTimer}
-                                  className={`min-h-[78px] rounded-3xl border-2 px-3 py-3 text-left transition-all active:scale-[0.98] ${
+                                  style={{
+                                    userSelect: 'none',
+                                    WebkitUserSelect: 'none',
+                                    WebkitTouchCallout: 'none',
+                                  }}
+                                  className={`min-h-[78px] rounded-3xl border-2 px-3 py-3 text-left transition-all active:scale-[0.98] select-none ${
                                     isPresent
                                       ? 'border-[#E7E0D5] bg-[#F8F5EE] text-[#17263A] shadow-md'
                                       : isRetired
