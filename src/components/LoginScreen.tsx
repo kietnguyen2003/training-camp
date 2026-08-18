@@ -2,10 +2,10 @@ import { FormEvent, useState } from 'react';
 import { motion } from 'motion/react';
 import { Zap, RefreshCw } from 'lucide-react';
 import logoImg from '../../assets/image.png';
-import { isValidHostCode } from '../utils/hostAuth';
+import { AccessRole, getAccessRoleFromCode } from '../utils/hostAuth';
 
 interface LoginScreenProps {
-  onSuccess: () => void;
+  onSuccess: (role: AccessRole) => void;
   onError?: (msg: string) => void;
 }
 
@@ -17,13 +17,15 @@ export function LoginScreen({ onSuccess, onError }: LoginScreenProps) {
     event.preventDefault();
     setIsConnecting(true);
 
-    if (!isValidHostCode(accessCode)) {
+    const accessRole = getAccessRoleFromCode(accessCode);
+
+    if (!accessRole) {
       setIsConnecting(false);
       if (onError) onError('Mã truy cập không đúng');
       return;
     }
 
-    onSuccess();
+    onSuccess(accessRole);
     setAccessCode('');
     setIsConnecting(false);
   };
@@ -71,7 +73,7 @@ export function LoginScreen({ onSuccess, onError }: LoginScreenProps) {
         <form className="w-full space-y-3 mt-8" onSubmit={handleSubmit}>
           <label htmlFor="host-access-code" className="block text-left">
             <span className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-300">
-              Mã truy cập host
+              Mã truy cập
             </span>
             <input
               id="host-access-code"
@@ -97,7 +99,7 @@ export function LoginScreen({ onSuccess, onError }: LoginScreenProps) {
                 Đang xác thực...
               </span>
             ) : (
-              'Vào trang host'
+              'Vào TeamFlow'
             )}
           </button>
         </form>

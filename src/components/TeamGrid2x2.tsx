@@ -1,4 +1,4 @@
-import { useState, type DragEvent, type TouchEvent as ReactTouchEvent } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type DragEvent, type TouchEvent as ReactTouchEvent } from 'react';
 import {
   Users,
   UserPlus,
@@ -11,7 +11,7 @@ import { Team, Participant } from '../types';
 
 interface TeamGrid2x2Props {
   teams: Team[];
-  participants: Participant[];
+  participantsByTeam: Record<string, Participant[]>;
   isHost: boolean;
   recentlyMovedId: string | null;
   draggingStudentId: string | null;
@@ -25,9 +25,9 @@ interface TeamGrid2x2Props {
   onRemoveFromTeam: (participantId: string) => void;
 }
 
-export function TeamGrid2x2({
+export const TeamGrid2x2 = memo(function TeamGrid2x2({
   teams,
-  participants,
+  participantsByTeam,
   isHost,
   recentlyMovedId,
   draggingStudentId,
@@ -44,6 +44,25 @@ export function TeamGrid2x2({
   const [touchDraggingStudentId, setTouchDraggingStudentId] = useState<string | null>(null);
   const [touchDragOverTeamId, setTouchDragOverTeamId] = useState<string | null>(null);
   const [touchPosition, setTouchPosition] = useState<{ x: number; y: number } | null>(null);
+  const touchMoveRafRef = useRef<number | null>(null);
+  const latestTouchRef = useRef<{ x: number; y: number; studentId: string } | null>(null);
+  const participantLookup = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.values(participantsByTeam)
+          .flat()
+          .map((participant) => [participant.id, participant])
+      ) as Record<string, Participant>,
+    [participantsByTeam]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (touchMoveRafRef.current !== null) {
+        window.cancelAnimationFrame(touchMoveRafRef.current);
+      }
+    };
+  }, []);
 
   const handleDragOver = (e: DragEvent, teamId: string) => {
     e.preventDefault();
@@ -74,13 +93,25 @@ export function TeamGrid2x2({
     const touch = e.touches[0];
     if (!touch) return;
 
-    e.preventDefault();
-    setTouchDraggingStudentId(studentId);
-    setTouchPosition({ x: touch.clientX, y: touch.clientY });
+    latestTouchRef.current = { x: touch.clientX, y: touch.clientY, studentId };
 
-    const target = document.elementFromPoint(touch.clientX, touch.clientY);
-    const dropZone = target instanceof Element ? target.closest('[data-drop-team-id]') : null;
-    setTouchDragOverTeamId(dropZone?.getAttribute('data-drop-team-id') || null);
+    if (touchMoveRafRef.current !== null) {
+      return;
+    }
+
+    touchMoveRafRef.current = window.requestAnimationFrame(() => {
+      touchMoveRafRef.current = null;
+
+      if (!latestTouchRef.current) return;
+
+      const { x, y, studentId: currentStudentId } = latestTouchRef.current;
+      setTouchDraggingStudentId(currentStudentId);
+      setTouchPosition({ x, y });
+
+      const target = document.elementFromPoint(x, y);
+      const dropZone = target instanceof Element ? target.closest('[data-drop-team-id]') : null;
+      setTouchDragOverTeamId(dropZone?.getAttribute('data-drop-team-id') || null);
+    });
   };
 
   const handleTouchEndStudent = (studentId: string) => {
@@ -96,7 +127,7 @@ export function TeamGrid2x2({
   return (
     <div className="grid grid-cols-2 grid-rows-2 gap-2 sm:gap-3.5 w-full h-full flex-1">
       {teams.slice(0, 4).map((team) => {
-        const members = participants.filter((p) => p.teamId === team.id);
+        const members = participantsByTeam[team.id] || [];
         const isDragOver = dragOverTeamId === team.id;
         const { colorScheme } = team;
         const courtLabel = team.lead.name || team.name;
@@ -136,7 +167,7 @@ export function TeamGrid2x2({
                 <span
                   className={`text-[10px] sm:text-xs font-extrabold px-2.5 py-0.5 rounded-full border ${colorScheme.badgeBg}`}
                 >
-                  {members.length} SV
+                  {members.length} HV
                 </span>
 
                 {isHost && (
@@ -213,7 +244,7 @@ export function TeamGrid2x2({
                         setTouchDragOverTeamId(null);
                         setTouchPosition(null);
                       }}
-                      className={`group/item py-1.5 px-3 rounded-full border flex items-center justify-between gap-1.5 select-none transition-all ${
+                      className={`group/item py-1.5 px-3 rounded-full border flex items-center justify-between gap-1.5 select-none transition-all touch-none ${
                         isDraggingThis
                           ? 'opacity-50 border-[#D9B472] bg-amber-100 scale-95'
                           : touchDraggingStudentId === member.id
@@ -236,26 +267,28 @@ export function TeamGrid2x2({
 
                       {/* Quick Attendance Toggle Indicator */}
                       <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          id={`toggle-team-status-${member.id}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onToggleStatus(member.id);
-                          }}
-                          className={`w-5 h-5 sm:w-5 sm:h-5 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
-                            isAbsent
-                              ? 'bg-rose-100 text-rose-700 hover:bg-rose-200'
-                              : 'bg-sky-100 text-sky-700 hover:bg-sky-200'
-                          }`}
-                          title={isAbsent ? 'Đang vắng (bấm để điểm danh)' : 'Đang có mặt (bấm để báo vắng)'}
-                        >
-                          {isAbsent ? (
-                            <UserX className="w-3 h-3 sm:w-3 sm:h-3" />
-                          ) : (
-                            <UserCheck className="w-3 h-3 sm:w-3 sm:h-3 text-sky-700" />
-                          )}
-                        </button>
+                        {isHost && (
+                          <button
+                            type="button"
+                            id={`toggle-team-status-${member.id}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onToggleStatus(member.id);
+                            }}
+                            className={`w-5 h-5 sm:w-5 sm:h-5 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+                              isAbsent
+                                ? 'bg-rose-100 text-rose-700 hover:bg-rose-200'
+                                : 'bg-sky-100 text-sky-700 hover:bg-sky-200'
+                            }`}
+                            title={isAbsent ? 'Đang vắng (bấm để điểm danh)' : 'Đang có mặt (bấm để báo vắng)'}
+                          >
+                            {isAbsent ? (
+                              <UserX className="w-3 h-3 sm:w-3 sm:h-3" />
+                            ) : (
+                              <UserCheck className="w-3 h-3 sm:w-3 sm:h-3 text-sky-700" />
+                            )}
+                          </button>
+                        )}
 
                         {isHost && (
                           <button
@@ -286,9 +319,9 @@ export function TeamGrid2x2({
           className="fixed z-[70] pointer-events-none -translate-x-1/2 -translate-y-1/2 px-3 py-1.5 rounded-full bg-[#1B2A3E] text-white border border-[#D9B472] shadow-2xl text-xs font-bold"
           style={{ left: touchPosition.x, top: touchPosition.y }}
         >
-          {participants.find((participant) => participant.id === touchDraggingStudentId)?.name || 'Đang kéo'}
+          {participantLookup[touchDraggingStudentId]?.name || 'Đang kéo'}
         </div>
       )}
     </div>
   );
-}
+});

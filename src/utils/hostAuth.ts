@@ -1,20 +1,42 @@
 const HOST_ACCESS_CODE = '7303';
-const HOST_SESSION_KEY = 'teamflow-host-session';
+const VIEWER_ACCESS_CODE = '1234';
+const ACCESS_ROLE_SESSION_KEY = 'teamflow-access-role';
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
-export function isValidHostCode(input: string): boolean {
-  return input.trim() === HOST_ACCESS_CODE;
+export type AccessRole = 'host' | 'viewer';
+
+export function getAccessRoleFromCode(input: string): AccessRole | null {
+  const normalizedInput = input.trim();
+
+  if (normalizedInput === HOST_ACCESS_CODE) {
+    return 'host';
+  }
+
+  if (normalizedInput === VIEWER_ACCESS_CODE) {
+    return 'viewer';
+  }
+
+  return null;
 }
 
-export function getStoredHostSession(storage: StorageLike = sessionStorage): boolean {
-  return storage.getItem(HOST_SESSION_KEY) === 'true';
+export function getStoredAccessRole(storage: StorageLike = sessionStorage): AccessRole | null {
+  const storedRole = storage.getItem(ACCESS_ROLE_SESSION_KEY);
+
+  if (storedRole === 'host' || storedRole === 'viewer') {
+    return storedRole;
+  }
+
+  return null;
 }
 
-export function persistHostSession(storage: StorageLike = sessionStorage): void {
-  storage.setItem(HOST_SESSION_KEY, 'true');
+export function persistAccessRole(
+  role: AccessRole,
+  storage: StorageLike = sessionStorage
+): void {
+  storage.setItem(ACCESS_ROLE_SESSION_KEY, role);
 }
 
-export function clearHostSession(storage: StorageLike = sessionStorage): void {
-  storage.removeItem(HOST_SESSION_KEY);
+export function clearAccessRole(storage: StorageLike = sessionStorage): void {
+  storage.removeItem(ACCESS_ROLE_SESSION_KEY);
 }

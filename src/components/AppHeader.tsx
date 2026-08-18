@@ -2,7 +2,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Shield, CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 import { User, Room, ToastMessage } from '../types';
 import { LiveIndicator } from './LiveIndicator';
-import logoImg from '../../assets/image.png';
+import brandLogoImg from '../../assets/image.png';
+import rightLogoImg from '/logo_right.png';
 
 interface AppHeaderProps {
   room: Room;
@@ -10,6 +11,7 @@ interface AppHeaderProps {
   toasts?: ToastMessage[];
   onDismissToast?: (id: string) => void;
   onOpenUserMenu: () => void;
+  isHost: boolean;
 }
 
 export function AppHeader({
@@ -18,6 +20,7 @@ export function AppHeader({
   toasts = [],
   onDismissToast,
   onOpenUserMenu,
+  isHost,
 }: AppHeaderProps) {
   const activeToast = toasts.length > 0 ? toasts[toasts.length - 1] : null;
 
@@ -30,7 +33,7 @@ export function AppHeader({
         {/* Left: Brand / Room Info */}
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-9 h-9 rounded-2xl bg-[#111C2B] border border-amber-500/40 p-1 flex items-center justify-center shadow-sm gold-glow-sm shrink-0">
-            <img src={logoImg} alt="Logo" className="w-full h-full object-contain" />
+            <img src={brandLogoImg} alt="Logo" className="w-full h-full object-contain" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -91,10 +94,14 @@ export function AppHeader({
 
           {/* Mode Pill */}
           <div
-            className="hidden xs:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold border transition-colors bg-[#D9B472]/15 text-[#E6C587] border-[#D9B472]/40"
+            className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold border transition-colors ${
+              isHost
+                ? 'bg-[#D9B472]/15 text-[#E6C587] border-[#D9B472]/40'
+                : 'bg-sky-500/10 text-sky-200 border-sky-400/30'
+            }`}
           >
-            <Shield className="w-3.5 h-3.5 text-[#D9B472]" />
-            <span>QUẢN TRỊ (HOST)</span>
+            <Shield className={`w-3.5 h-3.5 ${isHost ? 'text-[#D9B472]' : 'text-sky-300'}`} />
+            <span>{isHost ? 'QUẢN TRỊ (HOST)' : 'XEM (VIEWER)'}</span>
           </div>
 
           {/* User Avatar Button */}
@@ -105,17 +112,11 @@ export function AppHeader({
             aria-label="Open user settings menu"
           >
             <div className="relative">
-              {user.avatar ? (
-                <img
-                  src={user.avatar}
-                  alt={user.name}
-                  className="w-8 h-8 rounded-full object-cover ring-1 ring-amber-500/40"
-                />
-              ) : (
-                <div className="w-8 h-8 rounded-full bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 flex items-center justify-center font-extrabold text-xs">
-                  {user.name.charAt(0)}
-                </div>
-              )}
+              <img
+                src={rightLogoImg}
+                alt={user.name}
+                className="w-8 h-8 rounded-full object-cover ring-1 ring-amber-500/40"
+              />
               <span
                 className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#1B2A3E] bg-[#D9B472]"
               />

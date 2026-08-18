@@ -1,10 +1,11 @@
-import { useState, type DragEvent, type TouchEvent as ReactTouchEvent } from 'react';
+import { memo, useEffect, useRef, useState, type DragEvent, type TouchEvent as ReactTouchEvent } from 'react';
 import { Sparkles, Users } from 'lucide-react';
 import { Participant, Team } from '../types';
 
 interface LevelGrid2x2Props {
   teams: Team[];
-  participants: Participant[];
+  participantsByLevel: Record<number, Participant[]>;
+  participantLookup: Record<string, Participant>;
   isHost: boolean;
   draggingStudentId: string | null;
   recentlyMovedId: string | null;
@@ -13,9 +14,10 @@ interface LevelGrid2x2Props {
   onDropOnLevel: (level: number, studentId: string) => void;
 }
 
-export function LevelGrid2x2({
+export const LevelGrid2x2 = memo(function LevelGrid2x2({
   teams,
-  participants,
+  participantsByLevel,
+  participantLookup,
   isHost,
   draggingStudentId,
   recentlyMovedId,
@@ -27,6 +29,16 @@ export function LevelGrid2x2({
   const [touchDraggingParticipantId, setTouchDraggingParticipantId] = useState<string | null>(null);
   const [touchDragOverLevel, setTouchDragOverLevel] = useState<number | null>(null);
   const [touchPosition, setTouchPosition] = useState<{ x: number; y: number } | null>(null);
+  const touchMoveRafRef = useRef<number | null>(null);
+  const latestTouchRef = useRef<{ x: number; y: number; participantId: string } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (touchMoveRafRef.current !== null) {
+        window.cancelAnimationFrame(touchMoveRafRef.current);
+      }
+    };
+  }, []);
 
   const handleDragOver = (e: DragEvent, level: number) => {
     e.preventDefault();
@@ -57,14 +69,26 @@ export function LevelGrid2x2({
     const touch = e.touches[0];
     if (!touch) return;
 
-    e.preventDefault();
-    setTouchDraggingParticipantId(participantId);
-    setTouchPosition({ x: touch.clientX, y: touch.clientY });
+    latestTouchRef.current = { x: touch.clientX, y: touch.clientY, participantId };
 
-    const target = document.elementFromPoint(touch.clientX, touch.clientY);
-    const dropZone = target instanceof Element ? target.closest('[data-drop-level]') : null;
-    const level = dropZone?.getAttribute('data-drop-level');
-    setTouchDragOverLevel(level === null || level === undefined ? null : Number(level));
+    if (touchMoveRafRef.current !== null) {
+      return;
+    }
+
+    touchMoveRafRef.current = window.requestAnimationFrame(() => {
+      touchMoveRafRef.current = null;
+
+      if (!latestTouchRef.current) return;
+
+      const { x, y, participantId: currentParticipantId } = latestTouchRef.current;
+      setTouchDraggingParticipantId(currentParticipantId);
+      setTouchPosition({ x, y });
+
+      const target = document.elementFromPoint(x, y);
+      const dropZone = target instanceof Element ? target.closest('[data-drop-level]') : null;
+      const level = dropZone?.getAttribute('data-drop-level');
+      setTouchDragOverLevel(level === null || level === undefined ? null : Number(level));
+    });
   };
 
   const handleTouchEndParticipant = (participantId: string) => {
@@ -80,7 +104,7 @@ export function LevelGrid2x2({
   return (
     <div className="grid grid-cols-2 grid-rows-2 gap-2 sm:gap-3 w-full h-full flex-1">
       {teams.slice(0, 4).map((team, index) => {
-        const members = participants.filter((participant) => participant.level === index);
+        const members = participantsByLevel[index] || [];
         const isDragOver = dragOverLevel === index;
         const { colorScheme } = team;
         const levelLabel = `Level ${index}`;
@@ -112,7 +136,7 @@ export function LevelGrid2x2({
               <span
                 className={`text-[10px] sm:text-xs font-extrabold px-2.5 py-0.5 rounded-full border shrink-0 ${colorScheme.badgeBg}`}
               >
-                {members.length} SV
+                {members.length} HV
               </span>
             </div>
 
@@ -155,7 +179,7 @@ export function LevelGrid2x2({
                         setTouchDragOverLevel(null);
                         setTouchPosition(null);
                       }}
-                      className={`py-1.5 px-2.5 rounded-lg border flex items-center justify-between gap-2 select-none transition-all ${
+                      className={`py-1.5 px-2.5 rounded-lg border flex items-center justify-between gap-2 select-none transition-all touch-none ${
                         isDraggingThis
                           ? 'opacity-40 border-amber-400 bg-amber-500/20 scale-95'
                           : touchDraggingParticipantId === member.id
@@ -188,9 +212,9 @@ export function LevelGrid2x2({
           className="fixed z-[70] pointer-events-none -translate-x-1/2 -translate-y-1/2 px-3 py-1.5 rounded-full bg-[#1B2A3E] text-white border border-[#D9B472] shadow-2xl text-xs font-bold"
           style={{ left: touchPosition.x, top: touchPosition.y }}
         >
-          {participants.find((participant) => participant.id === touchDraggingParticipantId)?.name || 'Đang kéo'}
+          {participantLookup[touchDraggingParticipantId]?.name || 'Đang kéo'}
         </div>
       )}
     </div>
   );
-}
+});

@@ -2,29 +2,32 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  clearHostSession,
-  getStoredHostSession,
-  isValidHostCode,
-  persistHostSession,
+  clearAccessRole,
+  getAccessRoleFromCode,
+  getStoredAccessRole,
+  persistAccessRole,
 } from './hostAuth';
 
-test('accepts the configured host code and rejects invalid codes', () => {
-  assert.equal(isValidHostCode('7303'), true);
-  assert.equal(isValidHostCode(' 7303 '), true);
-  assert.equal(isValidHostCode('1234'), false);
-  assert.equal(isValidHostCode(''), false);
+test('maps access codes to the correct roles and rejects invalid codes', () => {
+  assert.equal(getAccessRoleFromCode('7303'), 'host');
+  assert.equal(getAccessRoleFromCode(' 7303 '), 'host');
+  assert.equal(getAccessRoleFromCode('1234'), 'viewer');
+  assert.equal(getAccessRoleFromCode(''), null);
 });
 
-test('persists and clears the local host session', () => {
+test('persists and clears the local access role', () => {
   const storage = createStorageMock();
 
-  assert.equal(getStoredHostSession(storage), false);
+  assert.equal(getStoredAccessRole(storage), null);
 
-  persistHostSession(storage);
-  assert.equal(getStoredHostSession(storage), true);
+  persistAccessRole('viewer', storage);
+  assert.equal(getStoredAccessRole(storage), 'viewer');
 
-  clearHostSession(storage);
-  assert.equal(getStoredHostSession(storage), false);
+  persistAccessRole('host', storage);
+  assert.equal(getStoredAccessRole(storage), 'host');
+
+  clearAccessRole(storage);
+  assert.equal(getStoredAccessRole(storage), null);
 });
 
 function createStorageMock(): Storage {

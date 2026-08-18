@@ -16,7 +16,7 @@ export function getTapToggleStatus(currentStatus: AttendanceStatus): AttendanceS
 export function getStatusLabel(status: AttendanceStatus): string {
   switch (status) {
     case 'present':
-      return 'CO MAT';
+      return 'CÓ MẶT';
     case 'absent':
       return 'VANG MAT';
     case 'retired':

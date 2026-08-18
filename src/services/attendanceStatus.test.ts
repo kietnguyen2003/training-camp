@@ -10,7 +10,7 @@ test('tap toggles only between present and absent, and restores retired to prese
 });
 
 test('returns labels for all attendance statuses', () => {
-  assert.equal(getStatusLabel('present'), 'CO MAT');
+  assert.equal(getStatusLabel('present'), 'CÓ MẶT');
   assert.equal(getStatusLabel('absent'), 'VANG MAT');
   assert.equal(getStatusLabel('retired'), 'DA NGHI');
 });

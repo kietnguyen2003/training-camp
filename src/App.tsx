@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   User,
   Room,
@@ -16,12 +16,6 @@ import { AppHeader } from './components/AppHeader';
 import { TeamGrid2x2 } from './components/TeamGrid2x2';
 import { LevelGrid2x2 } from './components/LevelGrid2x2';
 import { HostActionBar } from './components/HostActionBar';
-import { MoveMemberSheet } from './components/MoveMemberSheet';
-import { ResetConfirmationSheet } from './components/ResetConfirmationSheet';
-import { AddParticipantSheet } from './components/AddParticipantSheet';
-import { AttendanceSheet } from './components/AttendanceSheet';
-import { PresentParticipantPickerSheet } from './components/PresentParticipantPickerSheet';
-import { UserMenuModal } from './components/UserMenuModal';
 import { LoginScreen } from './components/LoginScreen';
 import { ToastContainer } from './components/Toast';
 import { RoomSkeleton } from './components/RoomSkeleton';
@@ -41,14 +35,46 @@ import {
 import { getTapToggleStatus } from './services/attendanceStatus';
 import { assignPresentParticipantsToTeams } from './services/levelAssignment';
 import {
-  clearHostSession,
-  getStoredHostSession,
-  persistHostSession,
+  AccessRole,
+  clearAccessRole,
+  getStoredAccessRole,
+  persistAccessRole,
 } from './utils/hostAuth';
+
+const AttendanceSheet = lazy(async () => {
+  const module = await import('./components/AttendanceSheet');
+  return { default: module.AttendanceSheet };
+});
+
+const MoveMemberSheet = lazy(async () => {
+  const module = await import('./components/MoveMemberSheet');
+  return { default: module.MoveMemberSheet };
+});
+
+const ResetConfirmationSheet = lazy(async () => {
+  const module = await import('./components/ResetConfirmationSheet');
+  return { default: module.ResetConfirmationSheet };
+});
+
+const AddParticipantSheet = lazy(async () => {
+  const module = await import('./components/AddParticipantSheet');
+  return { default: module.AddParticipantSheet };
+});
+
+const PresentParticipantPickerSheet = lazy(async () => {
+  const module = await import('./components/PresentParticipantPickerSheet');
+  return { default: module.PresentParticipantPickerSheet };
+});
+
+const UserMenuModal = lazy(async () => {
+  const module = await import('./components/UserMenuModal');
+  return { default: module.UserMenuModal };
+});
 
 export default function App() {
   // App State
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [accessRole, setAccessRole] = useState<AccessRole | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [draggingStudentId, setDraggingStudentId] = useState<string | null>(null);
@@ -57,10 +83,12 @@ export default function App() {
   const [room, setRoom] = useState<Room>(INITIAL_ROOM);
   const [teams] = useState<Team[]>(INITIAL_TEAMS);
   const [participants, setParticipants] = useState<Participant[]>(INITIAL_PARTICIPANTS);
+  const realtimeReloadTimerRef = useRef<number | null>(null);
 
   // Load Room & Participants from Supabase
   const reloadRoomData = useCallback(async () => {
     const data = await fetchInitialRoomData(room.id);
+
     if (data) {
       setRoom(data.room);
       setParticipants(data.participants);
@@ -73,22 +101,34 @@ export default function App() {
 
     // Subscribe to Realtime Postgres changes
     const unsubscribe = subscribeToRoomChanges(room.id, () => {
-      reloadRoomData();
+      if (realtimeReloadTimerRef.current !== null) {
+        window.clearTimeout(realtimeReloadTimerRef.current);
+      }
+
+      realtimeReloadTimerRef.current = window.setTimeout(() => {
+        realtimeReloadTimerRef.current = null;
+        reloadRoomData();
+      }, 120);
     });
 
     return () => {
+      if (realtimeReloadTimerRef.current !== null) {
+        window.clearTimeout(realtimeReloadTimerRef.current);
+      }
       unsubscribe();
     };
   }, [room.id, reloadRoomData]);
 
-  // Local host access session
+  // Local access session
   useEffect(() => {
-    const hasSession = getStoredHostSession();
+    const storedAccessRole = getStoredAccessRole();
 
-    if (hasSession) {
+    if (storedAccessRole) {
       setUser(INITIAL_USER);
+      setAccessRole(storedAccessRole);
       setIsLoggedIn(true);
     } else {
+      setAccessRole(null);
       setIsLoggedIn(false);
     }
 
@@ -96,18 +136,20 @@ export default function App() {
     setIsCheckingAuth(false);
   }, []);
 
-  const handleHostLogin = () => {
-    persistHostSession();
+  const handleAccessLogin = (role: AccessRole) => {
+    persistAccessRole(role);
     setUser(INITIAL_USER);
+    setAccessRole(role);
     setIsLoggedIn(true);
     setIsCheckingAuth(false);
-    showToast('Đã vào chế độ host', 'success');
+    showToast(role === 'host' ? 'Đã vào chế độ host' : 'Đã vào chế độ viewer', 'success');
   };
 
   const handleSignOut = async () => {
-    clearHostSession();
+    clearAccessRole();
     setActiveSheet(null);
     setIsLoggedIn(false);
+    setAccessRole(null);
     setUser(INITIAL_USER);
     showToast('Đã đăng xuất', 'info');
   };
@@ -140,15 +182,69 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Helper counts
-  const unassignedParticipants = participants.filter((p) => p.teamId === null);
-  const presentParticipants = participants.filter((p) => p.status === 'present');
-  const absentParticipants = participants.filter((p) => p.status === 'absent');
-  const retiredParticipants = participants.filter((p) => p.status === 'retired');
-  const presentUnassigned = unassignedParticipants.filter((p) => p.status === 'present');
+  const participantLookup = useMemo(
+    () => Object.fromEntries(participants.map((participant) => [participant.id, participant])) as Record<string, Participant>,
+    [participants]
+  );
+  const participantsByTeam = useMemo(() => {
+    const grouped: Record<string, Participant[]> = {};
 
-  const getTeamMemberCount = (teamId: string) =>
-    participants.filter((p) => p.teamId === teamId).length;
+    for (const team of teams) {
+      grouped[team.id] = [];
+    }
+
+    for (const participant of participants) {
+      if (participant.teamId && grouped[participant.teamId]) {
+        grouped[participant.teamId].push(participant);
+      }
+    }
+
+    return grouped;
+  }, [participants, teams]);
+  const participantsByLevel = useMemo(() => {
+    const grouped: Record<number, Participant[]> = {};
+
+    for (const participant of participants) {
+      const level = participant.level ?? 0;
+      if (!grouped[level]) {
+        grouped[level] = [];
+      }
+      grouped[level].push(participant);
+    }
+
+    return grouped;
+  }, [participants]);
+  const participantStats = useMemo(() => {
+    const presentParticipants: Participant[] = [];
+    const absentParticipants: Participant[] = [];
+    const retiredParticipants: Participant[] = [];
+    const presentUnassigned: Participant[] = [];
+
+    for (const participant of participants) {
+      if (participant.status === 'present') {
+        presentParticipants.push(participant);
+        if (participant.teamId === null) {
+          presentUnassigned.push(participant);
+        }
+      } else if (participant.status === 'absent') {
+        absentParticipants.push(participant);
+      } else {
+        retiredParticipants.push(participant);
+      }
+    }
+
+    return {
+      presentParticipants,
+      absentParticipants,
+      retiredParticipants,
+      presentUnassigned,
+    };
+  }, [participants]);
+
+  const getTeamMemberCount = useCallback(
+    (teamId: string) => participantsByTeam[teamId]?.length ?? 0,
+    [participantsByTeam]
+  );
 
   if (isCheckingAuth) {
     return (
@@ -163,20 +259,20 @@ export default function App() {
   if (!isLoggedIn) {
     return (
       <>
-        <LoginScreen onSuccess={handleHostLogin} onError={(msg) => showToast(msg, 'warning')} />
+        <LoginScreen onSuccess={handleAccessLogin} onError={(msg) => showToast(msg, 'warning')} />
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       </>
     );
   }
 
-  const isHost = true;
+  const isHost = accessRole === 'host';
 
   // Move Participant handler
   const handleSelectDestination = (
     participantId: string,
     targetTeamId: string | null
   ) => {
-    const participant = participants.find((p) => p.id === participantId);
+    const participant = participantLookup[participantId];
     if (!participant) return;
 
     if (participant.teamId === targetTeamId) return;
@@ -224,7 +320,7 @@ export default function App() {
   };
 
   const handleAssignLevel = (level: number, participantId: string) => {
-    const participant = participants.find((p) => p.id === participantId);
+    const participant = participantLookup[participantId];
     if (!participant) return;
     if (participant.level === level) return;
 
@@ -256,7 +352,7 @@ export default function App() {
 
   // Toggle Attendance Status (Có mặt <-> Vắng mặt)
   const handleToggleAttendance = (participantId: string) => {
-    const student = participants.find((p) => p.id === participantId);
+    const student = participantLookup[participantId];
     if (!student) return;
 
     const nextStatus = getTapToggleStatus(student.status);
@@ -280,7 +376,7 @@ export default function App() {
   };
 
   const handleSetAttendanceStatus = (participantId: string, status: Participant['status']) => {
-    const student = participants.find((p) => p.id === participantId);
+    const student = participantLookup[participantId];
     if (!student || student.status === status) return;
 
     setParticipants((prev) =>
@@ -335,7 +431,7 @@ export default function App() {
 
   // Remove student from roster
   const handleRemoveStudentFromRoster = async (participantId: string) => {
-    const student = participants.find((p) => p.id === participantId);
+    const student = participantLookup[participantId];
     const previousParticipants = participants;
 
     setParticipants((prev) => prev.filter((p) => p.id !== participantId));
@@ -415,7 +511,7 @@ export default function App() {
     const targetTeam = teams.find((team) => team.id === teamId) || null;
     if (!targetTeam) return;
 
-    if (presentUnassigned.length === 0) {
+    if (participantStats.presentUnassigned.length === 0) {
       showToast('Không có học viên có mặt nào đang chờ xếp sân', 'warning');
       return;
     }
@@ -429,6 +525,13 @@ export default function App() {
     handleSelectDestination(participantId, targetTeamForPresentAssign.id);
   };
 
+  const shouldRenderAttendanceSheet = activeSheet === 'attendance';
+  const shouldRenderMoveSheet = activeSheet === 'move';
+  const shouldRenderResetSheet = activeSheet === 'reset';
+  const shouldRenderAddSheet = activeSheet === 'add';
+  const shouldRenderAssignPresentSheet = activeSheet === 'assignPresent';
+  const shouldRenderUserMenu = activeSheet === 'user';
+
   return (
     <div className="h-[100dvh] max-h-[100dvh] bg-[#F7F3E9] text-slate-100 flex flex-col selection:bg-amber-500/20 overflow-hidden">
       {/* Top App Header with Header-Slot Toasts */}
@@ -438,6 +541,7 @@ export default function App() {
         toasts={toasts}
         onDismissToast={dismissToast}
         onOpenUserMenu={() => setActiveSheet('user')}
+        isHost={isHost}
       />
 
       {/* Main Content Area */}
@@ -479,7 +583,7 @@ export default function App() {
               {activeView === 'courts' ? (
                 <TeamGrid2x2
                   teams={teams}
-                  participants={participants}
+                  participantsByTeam={participantsByTeam}
                   isHost={isHost}
                   recentlyMovedId={recentlyMovedId}
                   draggingStudentId={draggingStudentId}
@@ -495,7 +599,8 @@ export default function App() {
               ) : (
                 <LevelGrid2x2
                   teams={teams}
-                  participants={participants}
+                  participantsByLevel={participantsByLevel}
+                  participantLookup={participantLookup}
                   isHost={isHost}
                   recentlyMovedId={recentlyMovedId}
                   draggingStudentId={draggingStudentId}
@@ -512,9 +617,9 @@ export default function App() {
       {/* Sticky Bottom Action Bar (Host Mode Only) */}
       {isHost && (
         <HostActionBar
-          unassignedCount={presentUnassigned.length}
-          presentCount={presentParticipants.length}
-          absentCount={absentParticipants.length + retiredParticipants.length}
+          unassignedCount={participantStats.presentUnassigned.length}
+          presentCount={participantStats.presentParticipants.length}
+          absentCount={participantStats.absentParticipants.length + participantStats.retiredParticipants.length}
           onShuffle={handleShuffle}
           onOpenAttendance={() => setActiveSheet('attendance')}
           onOpenReset={() => setActiveSheet('reset')}
@@ -525,72 +630,82 @@ export default function App() {
         />
       )}
 
-      {/* Bottom Sheet: Attendance */}
-      <AttendanceSheet
-        isOpen={activeSheet === 'attendance'}
-        participants={participants}
-        teams={teams}
-        onClose={() => setActiveSheet(null)}
-        onToggleStatus={handleToggleAttendance}
-        onSetStatus={handleSetAttendanceStatus}
-        onMarkAllStatus={handleMarkAllAttendance}
-        onAddStudent={handleAddStudentToRoster}
-        onBulkImport={handleBulkImportRoster}
-        onRemoveStudent={handleRemoveStudentFromRoster}
-        onUpdateNote={handleUpdateStudentNote}
-      />
+      <Suspense fallback={null}>
+        {shouldRenderAttendanceSheet ? (
+          <AttendanceSheet
+            isOpen={shouldRenderAttendanceSheet}
+            participants={participants}
+            teams={teams}
+            onClose={() => setActiveSheet(null)}
+            onToggleStatus={handleToggleAttendance}
+            onSetStatus={handleSetAttendanceStatus}
+            onMarkAllStatus={handleMarkAllAttendance}
+            onAddStudent={handleAddStudentToRoster}
+            onBulkImport={handleBulkImportRoster}
+            onRemoveStudent={handleRemoveStudentFromRoster}
+            onUpdateNote={handleUpdateStudentNote}
+          />
+        ) : null}
 
-      {/* Bottom Sheet: Move Member */}
-      <MoveMemberSheet
-        isOpen={activeSheet === 'move'}
-        participant={selectedParticipantForMove}
-        teams={teams}
-        getTeamMemberCount={getTeamMemberCount}
-        onClose={() => {
-          setActiveSheet(null);
-          setSelectedParticipantForMove(null);
-        }}
-        onSelectDestination={handleSelectDestination}
-        onToggleStatus={handleToggleAttendance}
-      />
+        {shouldRenderMoveSheet ? (
+          <MoveMemberSheet
+            isOpen={shouldRenderMoveSheet}
+            participant={selectedParticipantForMove}
+            teams={teams}
+            getTeamMemberCount={getTeamMemberCount}
+            onClose={() => {
+              setActiveSheet(null);
+              setSelectedParticipantForMove(null);
+            }}
+            onSelectDestination={handleSelectDestination}
+            onToggleStatus={handleToggleAttendance}
+          />
+        ) : null}
 
-      {/* Bottom Sheet: Reset Confirmation */}
-      <ResetConfirmationSheet
-        isOpen={activeSheet === 'reset'}
-        onClose={() => setActiveSheet(null)}
-        onConfirmReset={handleResetTeams}
-      />
+        {shouldRenderResetSheet ? (
+          <ResetConfirmationSheet
+            isOpen={shouldRenderResetSheet}
+            onClose={() => setActiveSheet(null)}
+            onConfirmReset={handleResetTeams}
+          />
+        ) : null}
 
-      {/* Bottom Sheet: Add Participant */}
-      <AddParticipantSheet
-        isOpen={activeSheet === 'add'}
-        teams={teams}
-        targetTeamId={targetTeamForAdd}
-        onClose={() => {
-          setActiveSheet(null);
-          setTargetTeamForAdd(null);
-        }}
-        onAddParticipant={handleAddParticipant}
-      />
+        {shouldRenderAddSheet ? (
+          <AddParticipantSheet
+            isOpen={shouldRenderAddSheet}
+            teams={teams}
+            targetTeamId={targetTeamForAdd}
+            onClose={() => {
+              setActiveSheet(null);
+              setTargetTeamForAdd(null);
+            }}
+            onAddParticipant={handleAddParticipant}
+          />
+        ) : null}
 
-      <PresentParticipantPickerSheet
-        isOpen={activeSheet === 'assignPresent'}
-        team={targetTeamForPresentAssign}
-        participants={presentUnassigned}
-        onClose={() => {
-          setActiveSheet(null);
-          setTargetTeamForPresentAssign(null);
-        }}
-        onSelectParticipant={handleAssignPresentParticipantToTeam}
-      />
+        {shouldRenderAssignPresentSheet ? (
+          <PresentParticipantPickerSheet
+            isOpen={shouldRenderAssignPresentSheet}
+            team={targetTeamForPresentAssign}
+            participants={participantStats.presentUnassigned}
+            onClose={() => {
+              setActiveSheet(null);
+              setTargetTeamForPresentAssign(null);
+            }}
+            onSelectParticipant={handleAssignPresentParticipantToTeam}
+          />
+        ) : null}
 
-      {/* Modal / Sheet: User Profile */}
-      <UserMenuModal
-        isOpen={activeSheet === 'user'}
-        user={user}
-        onClose={() => setActiveSheet(null)}
-        onSignOut={handleSignOut}
-      />
+        {shouldRenderUserMenu ? (
+          <UserMenuModal
+            isOpen={shouldRenderUserMenu}
+            user={user}
+            onClose={() => setActiveSheet(null)}
+            onSignOut={handleSignOut}
+          />
+        ) : null}
+      </Suspense>
+
     </div>
   );
 }
