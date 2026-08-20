@@ -52,6 +52,7 @@ export interface Team {
   name: string;
   lead: TeamLead;
   colorScheme: TeamColorScheme;
+  note?: string;
 }
 
 export interface Room {

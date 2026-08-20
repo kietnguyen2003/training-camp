@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState, type DragEvent, type TouchEvent as ReactTouchEvent } from 'react';
 import {
+  Bell,
   Users,
   UserPlus,
   UserCheck,
@@ -20,6 +21,7 @@ interface TeamGrid2x2Props {
   onDropOnTeam: (teamId: string, studentId: string) => void;
   onMoveMember: (participant: Participant) => void;
   onQuickAddMember: (teamId: string) => void;
+  onOpenTeamNote: (teamId: string) => void;
   onSelectEmptyTeam: (teamId: string) => void;
   onToggleStatus: (participantId: string) => void;
   onRemoveFromTeam: (participantId: string) => void;
@@ -36,6 +38,7 @@ export const TeamGrid2x2 = memo(function TeamGrid2x2({
   onDropOnTeam,
   onMoveMember,
   onQuickAddMember,
+  onOpenTeamNote,
   onSelectEmptyTeam,
   onToggleStatus,
   onRemoveFromTeam,
@@ -131,6 +134,8 @@ export const TeamGrid2x2 = memo(function TeamGrid2x2({
         const isDragOver = dragOverTeamId === team.id;
         const { colorScheme } = team;
         const courtLabel = team.lead.name || team.name;
+        const teamNote = team.note?.trim() ?? '';
+        const hasTeamNote = teamNote.length > 0;
 
         return (
           <div
@@ -170,10 +175,30 @@ export const TeamGrid2x2 = memo(function TeamGrid2x2({
                   {members.length} HV
                 </span>
 
+                <button
+                  type="button"
+                  id={`team-note-btn-${team.id}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenTeamNote(team.id);
+                  }}
+                  className={`relative h-8 rounded-full border inline-flex items-center justify-center gap-1.5 px-2.5 text-[10px] sm:text-[11px] font-bold transition-all active:scale-95 cursor-pointer shadow-xs ${
+                    hasTeamNote
+                      ? 'bg-[#FFF7E0] text-[#9A5800] border-[#F2C14E] hover:bg-[#FFF2CC] shadow-[0_8px_20px_-14px_rgba(154,88,0,0.55)]'
+                      : 'bg-white/90 text-slate-600 border-[#E6DFD3] hover:border-slate-300 hover:bg-white hover:text-[#1B2A3E]'
+                  }`}
+                  title={hasTeamNote ? `Xem ghi chú sân ${courtLabel}` : `Thêm ghi chú sân ${courtLabel}`}
+                >
+                  <Bell className={`w-3.5 h-3.5 ${hasTeamNote ? 'text-[#B86A00]' : ''}`} />
+                  {hasTeamNote ? (
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[#FF9F1C] border border-white" />
+                  ) : null}
+                </button>
+
                 {isHost && (
                   <button
-                  type="button"
-                  id={`team-quick-add-${team.id}`}
+                    type="button"
+                    id={`team-quick-add-${team.id}`}
                     onClick={(e) => {
                       e.stopPropagation();
                       onQuickAddMember(team.id);

@@ -30,6 +30,7 @@ import {
   deleteParticipantFromDB,
   batchUpdateParticipantTeamsInDB,
   updateParticipantLevelInDB,
+  updateTeamNoteInDB,
   subscribeToRoomChanges,
 } from './services/roomService';
 import { getTapToggleStatus } from './services/attendanceStatus';
@@ -71,6 +72,11 @@ const UserMenuModal = lazy(async () => {
   return { default: module.UserMenuModal };
 });
 
+const TeamNoteSheet = lazy(async () => {
+  const module = await import('./components/TeamNoteSheet');
+  return { default: module.TeamNoteSheet };
+});
+
 export default function App() {
   // App State
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
@@ -81,7 +87,7 @@ export default function App() {
   const [activeView, setActiveView] = useState<'courts' | 'levels'>('courts');
   const [user, setUser] = useState<User>(INITIAL_USER);
   const [room, setRoom] = useState<Room>(INITIAL_ROOM);
-  const [teams] = useState<Team[]>(INITIAL_TEAMS);
+  const [teams, setTeams] = useState<Team[]>(INITIAL_TEAMS);
   const [participants, setParticipants] = useState<Participant[]>(INITIAL_PARTICIPANTS);
   const realtimeReloadTimerRef = useRef<number | null>(null);
 
@@ -91,6 +97,7 @@ export default function App() {
 
     if (data) {
       setRoom(data.room);
+      setTeams(data.teams);
       setParticipants(data.participants);
     }
   }, [room.id]);
@@ -157,12 +164,13 @@ export default function App() {
   // Interaction State
   const [recentlyMovedId, setRecentlyMovedId] = useState<string | null>(null);
   const [activeSheet, setActiveSheet] = useState<
-    'move' | 'reset' | 'user' | 'add' | 'attendance' | 'assignPresent' | null
+    'move' | 'reset' | 'user' | 'add' | 'attendance' | 'assignPresent' | 'teamNote' | null
   >(null);
   const [selectedParticipantForMove, setSelectedParticipantForMove] =
     useState<Participant | null>(null);
   const [targetTeamForAdd, setTargetTeamForAdd] = useState<string | null>(null);
   const [targetTeamForPresentAssign, setTargetTeamForPresentAssign] = useState<Team | null>(null);
+  const [targetTeamForNote, setTargetTeamForNote] = useState<Team | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   // Toast Helper
@@ -525,11 +533,29 @@ export default function App() {
     handleSelectDestination(participantId, targetTeamForPresentAssign.id);
   };
 
+  const handleOpenTeamNote = (teamId: string) => {
+    const targetTeam = teams.find((team) => team.id === teamId) || null;
+    if (!targetTeam) return;
+
+    setTargetTeamForNote(targetTeam);
+    setActiveSheet('teamNote');
+  };
+
+  const handleSaveTeamNote = async (teamId: string, note: string | null) => {
+    setTeams((prev) =>
+      prev.map((team) => (team.id === teamId ? { ...team, note: note ?? undefined } : team))
+    );
+
+    await updateTeamNoteInDB(teamId, note ?? '');
+    showToast(note ? 'Đã lưu ghi chú cho sân' : 'Đã xoá ghi chú của sân', 'success');
+  };
+
   const shouldRenderAttendanceSheet = activeSheet === 'attendance';
   const shouldRenderMoveSheet = activeSheet === 'move';
   const shouldRenderResetSheet = activeSheet === 'reset';
   const shouldRenderAddSheet = activeSheet === 'add';
   const shouldRenderAssignPresentSheet = activeSheet === 'assignPresent';
+  const shouldRenderTeamNoteSheet = activeSheet === 'teamNote';
   const shouldRenderUserMenu = activeSheet === 'user';
 
   return (
@@ -592,6 +618,7 @@ export default function App() {
                   onDropOnTeam={handleDropOnTeam}
                   onMoveMember={handleOpenMoveSheet}
                   onQuickAddMember={handleQuickAddTeamMember}
+                  onOpenTeamNote={handleOpenTeamNote}
                   onSelectEmptyTeam={handleOpenPresentPickerForTeam}
                   onToggleStatus={handleToggleAttendance}
                   onRemoveFromTeam={handleRemoveFromTeam}
@@ -693,6 +720,19 @@ export default function App() {
               setTargetTeamForPresentAssign(null);
             }}
             onSelectParticipant={handleAssignPresentParticipantToTeam}
+          />
+        ) : null}
+
+        {shouldRenderTeamNoteSheet ? (
+          <TeamNoteSheet
+            isOpen={shouldRenderTeamNoteSheet}
+            team={targetTeamForNote}
+            isHost={isHost}
+            onClose={() => {
+              setActiveSheet(null);
+              setTargetTeamForNote(null);
+            }}
+            onSave={handleSaveTeamNote}
           />
         ) : null}
 

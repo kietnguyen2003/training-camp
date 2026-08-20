@@ -2,6 +2,7 @@ import { supabase } from '../supabaseClient';
 import { Participant, Room, Team, UserRole } from '../types';
 import { INITIAL_ROOM, INITIAL_TEAMS, INITIAL_PARTICIPANTS } from '../mockData';
 import { getRoomRealtimeBindings } from './roomRealtime';
+import { applyPersistedTeamNotes, normalizeTeamNoteDraft } from './teamNotes';
 
 export interface UserProfile {
   id: string;
@@ -111,7 +112,13 @@ export async function fetchInitialRoomData(roomId: string = 'room-badminton-camp
       teamsData = teamsToInsert;
     }
 
-    // 3. Fetch Participants
+    // 3. Fetch Team Notes
+    let { data: teamNotesData } = await supabase
+      .from('team_notes')
+      .select('team_id, content')
+      .eq('room_id', roomId);
+
+    // 4. Fetch Participants
     let { data: participantsData } = await supabase.from('participants').select('*').eq('room_id', roomId);
     if (roomWasCreated && (!participantsData || participantsData.length === 0)) {
       const participantsToInsert = INITIAL_PARTICIPANTS.map((p) => ({
@@ -129,6 +136,14 @@ export async function fetchInitialRoomData(roomId: string = 'room-badminton-camp
       await supabase.from('participants').insert(participantsToInsert);
       participantsData = participantsToInsert;
     }
+
+    const formattedTeams = applyPersistedTeamNotes(
+      INITIAL_TEAMS,
+      (teamNotesData || []).map((teamNote: any) => ({
+        teamId: teamNote.team_id,
+        content: teamNote.content,
+      }))
+    );
 
     // Transform participants data
     const formattedParticipants: Participant[] = (participantsData || []).map((p: any) => ({
@@ -152,7 +167,7 @@ export async function fetchInitialRoomData(roomId: string = 'room-badminton-camp
         lastUpdated: 'Vừa xong',
         totalParticipants: formattedParticipants.length,
       } as Room,
-      teams: INITIAL_TEAMS, // uses rich preset UI color schemes
+      teams: formattedTeams,
       participants: formattedParticipants,
     };
   } catch (err) {
@@ -208,6 +223,36 @@ export async function updateParticipantLevelInDB(
       .eq('id', participantId);
   } catch (err) {
     console.error('Error updating participant level in DB:', err);
+  }
+}
+
+export async function updateTeamNoteInDB(teamId: string, note: string) {
+  try {
+    const normalizedNote = normalizeTeamNoteDraft(note);
+    const { data: teamData } = await supabase
+      .from('teams')
+      .select('room_id')
+      .eq('id', teamId)
+      .single();
+
+    if (!teamData?.room_id) {
+      return;
+    }
+
+    await supabase
+      .from('team_notes')
+      .upsert(
+        {
+          room_id: teamData.room_id,
+          team_id: teamId,
+          content: normalizedNote,
+          created_by_role: 'host',
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'team_id' }
+      );
+  } catch (err) {
+    console.error('Error updating team note in DB:', err);
   }
 }
 
