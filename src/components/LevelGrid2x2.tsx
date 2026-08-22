@@ -193,11 +193,6 @@ export const LevelGrid2x2 = memo(function LevelGrid2x2({
                         {member.name}
                       </span>
 
-                      {member.studentCode && (
-                        <span className="text-[10px] font-mono text-slate-400 font-semibold px-1 py-0.5 bg-slate-800 rounded shrink-0">
-                          {member.studentCode}
-                        </span>
-                      )}
                     </div>
                   );
                 })

@@ -1,77 +1,9 @@
 import { supabase } from '../supabaseClient';
-import { Participant, Room, Team, UserRole } from '../types';
+import { Participant, ParticipantRole, ParticipantRoleRecord, Room, Team } from '../types';
 import { INITIAL_ROOM, INITIAL_TEAMS, INITIAL_PARTICIPANTS } from '../mockData';
 import { getRoomRealtimeBindings } from './roomRealtime';
 import { applyPersistedTeamNotes, normalizeTeamNoteDraft } from './teamNotes';
-
-export interface UserProfile {
-  id: string;
-  email: string;
-  full_name: string;
-  avatar_url?: string;
-  role: UserRole;
-}
-
-// ----------------------------------------------------
-// User Profile & Role Services
-// ----------------------------------------------------
-export async function getUserProfile(userId: string): Promise<UserProfile | null> {
-  try {
-    const { data, error } = await supabase
-      .from('user_roles')
-      .select('*')
-      .eq('id', userId)
-      .single();
-
-    if (error || !data) {
-      return null;
-    }
-
-    return {
-      id: data.id,
-      email: data.email,
-      full_name: data.full_name,
-      avatar_url: data.avatar_url,
-      role: data.role as UserRole,
-    };
-  } catch (err) {
-    console.error('Error fetching user profile:', err);
-    return null;
-  }
-}
-
-export async function upsertUserProfile(profile: UserProfile): Promise<UserProfile | null> {
-  try {
-    const { data, error } = await supabase
-      .from('user_roles')
-      .upsert({
-        id: profile.id,
-        email: profile.email,
-        full_name: profile.full_name,
-        avatar_url: profile.avatar_url,
-        role: profile.role,
-        updated_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error upserting user profile:', error);
-      return null;
-    }
-
-    return {
-      id: data.id,
-      email: data.email,
-      full_name: data.full_name,
-      avatar_url: data.avatar_url,
-      role: data.role as UserRole,
-    };
-  } catch (err) {
-    console.error('Error in upsertUserProfile:', err);
-    return null;
-  }
-}
+import { normalizeStudentCode } from '../utils/hostAuth';
 
 // ----------------------------------------------------
 // Room, Team & Participant Data Seeding & Fetching
@@ -158,6 +90,34 @@ export async function fetchInitialRoomData(roomId: string = 'room-badminton-camp
       updatedAt: Number(p.updated_at) || Date.now(),
     }));
 
+    const participantsById = new Map(formattedParticipants.map((participant) => [participant.id, participant]));
+    const formattedTeamsWithAssistants = formattedTeams.map((team) => {
+      const teamData = (teamsData || []).find((savedTeam: any) => savedTeam.id === team.id);
+      const assistantParticipant = teamData?.assistant_participant_id
+        ? participantsById.get(teamData.assistant_participant_id)
+        : null;
+
+      const persistedTeam = teamData ? {
+        ...team,
+        name: teamData.name || team.name,
+        lead: {
+          ...team.lead,
+          name: teamData.lead_name || team.lead.name,
+          avatar: teamData.lead_avatar ?? team.lead.avatar,
+        },
+      } : team;
+
+      return assistantParticipant ? {
+        ...persistedTeam,
+        assistant: {
+          participantId: assistantParticipant.id,
+          name: assistantParticipant.name,
+          avatar: assistantParticipant.avatar,
+          studentCode: assistantParticipant.studentCode,
+        },
+      } : persistedTeam;
+    });
+
     return {
       room: {
         id: roomData.id,
@@ -167,7 +127,7 @@ export async function fetchInitialRoomData(roomId: string = 'room-badminton-camp
         lastUpdated: 'Vừa xong',
         totalParticipants: formattedParticipants.length,
       } as Room,
-      teams: formattedTeams,
+      teams: formattedTeamsWithAssistants,
       participants: formattedParticipants,
     };
   } catch (err) {
@@ -178,6 +138,65 @@ export async function fetchInitialRoomData(roomId: string = 'room-badminton-camp
       participants: INITIAL_PARTICIPANTS,
     };
   }
+}
+
+export async function updateTeamAssistantInDB(teamId: string, participantId: string | null) {
+  const { data: teamData, error: teamError } = await supabase
+    .from('teams')
+    .update({ assistant_participant_id: participantId })
+    .eq('id', teamId)
+    .select('room_id')
+    .single();
+
+  if (teamError || !teamData) {
+    throw teamError ?? new Error('Không tìm thấy sân cần cập nhật trợ giảng.');
+  }
+
+  if (participantId) {
+    const { error } = await supabase
+      .from('participant_role')
+      .upsert(
+        {
+          room_id: teamData.room_id,
+          participant_id: participantId,
+          role: 'assistant',
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'room_id,participant_id' }
+      );
+
+    if (error) throw error;
+  }
+}
+
+export async function fetchParticipantRoleRecords(roomId: string): Promise<ParticipantRoleRecord[]> {
+  const { data, error } = await supabase
+    .from('participant_role')
+    .select('room_id, participant_id, role')
+    .eq('room_id', roomId);
+
+  if (error) throw error;
+
+  return (data ?? []).map((record: any) => ({
+    roomId: record.room_id,
+    participantId: record.participant_id,
+    role: record.role as ParticipantRole,
+  }));
+}
+
+export async function setParticipantRoleInDB(
+  roomId: string,
+  participantId: string,
+  role: ParticipantRole
+) {
+  const { error } = await supabase
+    .from('participant_role')
+    .upsert(
+      { room_id: roomId, participant_id: participantId, role, updated_at: new Date().toISOString() },
+      { onConflict: 'room_id,participant_id' }
+    );
+
+  if (error) throw error;
 }
 
 // ----------------------------------------------------
@@ -259,7 +278,9 @@ export async function updateTeamNoteInDB(teamId: string, note: string) {
 export async function addParticipantToDB(
   roomId: string,
   name: string,
-  teamId: string | null
+  teamId: string | null,
+  studentCode?: string,
+  note?: string
 ) {
   try {
     const newId = 'p-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
@@ -271,7 +292,9 @@ export async function addParticipantToDB(
         team_id: teamId,
         level: 0,
         name,
+        student_code: studentCode ? normalizeStudentCode(studentCode) : null,
         status: 'present',
+        note,
         updated_at: Date.now(),
       })
       .select()
@@ -283,6 +306,27 @@ export async function addParticipantToDB(
     console.error('Error adding participant to DB:', err);
     return null;
   }
+}
+
+export async function findParticipantByStudentCode(roomId: string, studentCode: string) {
+  const normalizedStudentCode = normalizeStudentCode(studentCode);
+  if (!normalizedStudentCode) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from('participants')
+    .select('id, name, student_code')
+    .eq('room_id', roomId)
+    .eq('student_code', normalizedStudentCode)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Error validating student access code:', error);
+    return null;
+  }
+
+  return data;
 }
 
 export async function resetRoomTeamsInDB(roomId: string) {

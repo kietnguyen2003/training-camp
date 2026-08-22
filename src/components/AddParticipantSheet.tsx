@@ -8,7 +8,7 @@ interface AddParticipantSheetProps {
   teams: Team[];
   targetTeamId?: string | null;
   onClose: () => void;
-  onAddParticipant: (name: string, teamId: string | null) => void;
+  onAddParticipant: (name: string, studentCode: string, teamId: string | null) => void;
 }
 
 export function AddParticipantSheet({
@@ -19,15 +19,17 @@ export function AddParticipantSheet({
   onAddParticipant,
 }: AddParticipantSheetProps) {
   const [name, setName] = useState('');
+  const [studentCode, setStudentCode] = useState('');
   const [selectedTeamId, setSelectedTeamId] = useState<string | null>(targetTeamId);
 
   if (!isOpen) return null;
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
-    onAddParticipant(name.trim(), selectedTeamId);
+    if (!name.trim() || !studentCode.trim()) return;
+    onAddParticipant(name.trim(), studentCode.trim(), selectedTeamId);
     setName('');
+    setStudentCode('');
     onClose();
   };
 
@@ -96,6 +98,21 @@ export function AddParticipantSheet({
             </div>
 
             <div>
+              <label htmlFor="participant-student-code-input" className="block text-xs font-semibold text-slate-300 mb-1.5">
+                Mã học viên
+              </label>
+              <input
+                id="participant-student-code-input"
+                type="text"
+                value={studentCode}
+                onChange={(e) => setStudentCode(e.target.value.toUpperCase())}
+                placeholder="Ví dụ: SV25"
+                autoCapitalize="characters"
+                className="w-full px-4 py-3 text-base font-bold tracking-wide uppercase rounded-xl border border-slate-700 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 bg-[#112238] text-white placeholder-slate-400 transition-all min-h-[48px]"
+              />
+            </div>
+
+            <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">
                 Xếp vào nhóm ban đầu
               </label>
@@ -140,7 +157,7 @@ export function AddParticipantSheet({
               <button
                 type="submit"
                 id="submit-add-participant-btn"
-                disabled={!name.trim()}
+                disabled={!name.trim() || !studentCode.trim()}
                 className="w-full py-3.5 px-4 rounded-xl font-bold text-sm bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 hover:from-amber-300 hover:to-yellow-400 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] transition-all min-h-[48px] shadow-md cursor-pointer gold-glow-sm"
               >
                 Thêm vào {selectedTeamId ? teams.find(t => t.id === selectedTeamId)?.name : 'Danh sách chờ'}
@@ -152,4 +169,3 @@ export function AddParticipantSheet({
     </AnimatePresence>
   );
 }
-

@@ -68,11 +68,6 @@ export function MoveMemberSheet({
                   <h3 className="text-lg font-bold text-white leading-none">
                     {participant.name}
                   </h3>
-                  {participant.studentCode && (
-                    <span className="text-[10px] font-mono text-slate-400 font-bold bg-slate-800 px-1.5 py-0.5 rounded">
-                      {participant.studentCode}
-                    </span>
-                  )}
                 </div>
 
                 <div className="flex items-center gap-2 mt-1">
@@ -218,4 +213,3 @@ export function MoveMemberSheet({
     </AnimatePresence>
   );
 }
-

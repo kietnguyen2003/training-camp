@@ -134,11 +134,6 @@ export function TeamDetailModal({
                             <span className={`text-sm font-bold truncate ${isAbsent ? 'line-through text-gray-500' : 'text-gray-900'}`}>
                               {member.name}
                             </span>
-                            {member.studentCode && (
-                              <span className="text-[10px] font-mono font-bold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
-                                {member.studentCode}
-                              </span>
-                            )}
                           </div>
                           <span className={`text-[11px] font-bold ${isAbsent ? 'text-rose-600' : 'text-emerald-600'}`}>
                             {isAbsent ? 'Vắng mặt' : 'Có mặt'}

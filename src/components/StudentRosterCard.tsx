@@ -66,9 +66,7 @@ export function StudentRosterCard({
   // Filtered List
   const filteredParticipants = useMemo(() => {
     return participants.filter((p) => {
-      const matchesSearch =
-        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (p.studentCode && p.studentCode.toLowerCase().includes(searchQuery.toLowerCase()));
+      const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
 
       if (!matchesSearch) return false;
 
@@ -346,11 +344,6 @@ export function StudentRosterCard({
                       >
                         {student.name}
                       </span>
-                      {student.studentCode && (
-                        <span className="text-[10px] font-mono font-bold text-slate-500 bg-[#FAF7F2] px-2 py-0.5 rounded-full border border-[#E6DFD3]">
-                          {student.studentCode}
-                        </span>
-                      )}
                     </div>
 
                     <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-0.5">

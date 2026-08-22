@@ -1,7 +1,7 @@
 export interface RoomRealtimeBinding {
   event: '*';
   schema: 'public';
-  table: 'participants' | 'levels' | 'teams' | 'team_notes';
+  table: 'participants' | 'participant_role' | 'levels' | 'teams' | 'team_notes';
   filter: string;
 }
 
@@ -11,6 +11,12 @@ export function getRoomRealtimeBindings(roomId: string): RoomRealtimeBinding[] {
       event: '*',
       schema: 'public',
       table: 'participants',
+      filter: `room_id=eq.${roomId}`,
+    },
+    {
+      event: '*',
+      schema: 'public',
+      table: 'participant_role',
       filter: `room_id=eq.${roomId}`,
     },
     {

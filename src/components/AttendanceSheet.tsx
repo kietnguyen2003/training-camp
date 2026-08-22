@@ -21,6 +21,7 @@ interface AttendanceSheetProps {
   participants: Participant[];
   teams: Team[];
   onClose: () => void;
+  onCompleteAttendance: () => void | Promise<void>;
   onToggleStatus: (participantId: string) => void;
   onSetStatus: (participantId: string, status: Participant['status']) => void;
   onMarkAllStatus: (status: 'present' | 'absent') => void;
@@ -35,6 +36,7 @@ export function AttendanceSheet({
   participants,
   teams,
   onClose,
+  onCompleteAttendance,
   onToggleStatus,
   onSetStatus,
   onMarkAllStatus,
@@ -82,9 +84,8 @@ export function AttendanceSheet({
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase().trim();
         const matchesName = p.name.toLowerCase().includes(query);
-        const matchesCode = p.studentCode?.toLowerCase().includes(query) ?? false;
         const matchesNote = p.note?.toLowerCase().includes(query) ?? false;
-        return matchesName || matchesCode || matchesNote;
+        return matchesName || matchesNote;
       }
       return true;
     });
@@ -404,7 +405,7 @@ export function AttendanceSheet({
                                       <div className={`mt-1 text-[10px] font-semibold ${
                                         isPresent ? 'text-slate-500' : 'text-slate-400'
                                       }`}>
-                                        {participant.studentCode || getTeamName(participant.teamId)}
+                                        {getTeamName(participant.teamId)}
                                       </div>
                                       {participant.note && (
                                         <div className={`mt-1 truncate text-[10px] ${
@@ -603,10 +604,12 @@ export function AttendanceSheet({
               <button
                 type="button"
                 id="done-attendance-btn"
-                onClick={onClose}
+                onClick={() => {
+                  void onCompleteAttendance();
+                }}
                 className="py-2.5 px-5 rounded-2xl font-bold text-sm text-[#1B2A3E] bg-[#D9B472] hover:bg-[#C9A461] active:scale-[0.98] transition-all shadow-xs"
               >
-                Xong (Lưu điểm danh)
+                Hoàn tất điểm danh
               </button>
             </div>
           </motion.div>

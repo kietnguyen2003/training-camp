@@ -1,6 +1,6 @@
 const HOST_ACCESS_CODE = '7303';
-const VIEWER_ACCESS_CODE = '1234';
 const ACCESS_ROLE_SESSION_KEY = 'teamflow-access-role';
+const STUDENT_CODE_PATTERN = /^[A-Z0-9_-]{2,32}$/;
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
@@ -13,11 +13,12 @@ export function getAccessRoleFromCode(input: string): AccessRole | null {
     return 'host';
   }
 
-  if (normalizedInput === VIEWER_ACCESS_CODE) {
-    return 'viewer';
-  }
-
   return null;
+}
+
+export function normalizeStudentCode(input: string): string | null {
+  const normalizedInput = input.trim().toUpperCase();
+  return STUDENT_CODE_PATTERN.test(normalizedInput) ? normalizedInput : null;
 }
 
 export function getStoredAccessRole(storage: StorageLike = sessionStorage): AccessRole | null {

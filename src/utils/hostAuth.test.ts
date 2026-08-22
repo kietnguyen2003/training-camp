@@ -5,14 +5,22 @@ import {
   clearAccessRole,
   getAccessRoleFromCode,
   getStoredAccessRole,
+  normalizeStudentCode,
   persistAccessRole,
 } from './hostAuth';
 
-test('maps access codes to the correct roles and rejects invalid codes', () => {
+test('maps only the host code and rejects the retired shared viewer code', () => {
   assert.equal(getAccessRoleFromCode('7303'), 'host');
   assert.equal(getAccessRoleFromCode(' 7303 '), 'host');
-  assert.equal(getAccessRoleFromCode('1234'), 'viewer');
+  assert.equal(getAccessRoleFromCode('1234'), null);
   assert.equal(getAccessRoleFromCode(''), null);
+});
+
+test('normalizes valid student codes and rejects invalid formats', () => {
+  assert.equal(normalizeStudentCode(' sv01 '), 'SV01');
+  assert.equal(normalizeStudentCode('CT-2026_01'), 'CT-2026_01');
+  assert.equal(normalizeStudentCode(''), null);
+  assert.equal(normalizeStudentCode('SV 01'), null);
 });
 
 test('persists and clears the local access role', () => {

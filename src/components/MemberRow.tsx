@@ -77,11 +77,6 @@ export function MemberRow({
             {participant.name}
           </span>
 
-          {participant.studentCode && (
-            <span className="text-[10px] font-mono text-slate-400 font-semibold px-1 py-0.2 bg-slate-800 rounded">
-              {participant.studentCode}
-            </span>
-          )}
 
           {isAbsent && (
             <span className="text-[10px] font-bold text-rose-300 bg-rose-500/20 px-1.5 py-0.5 rounded-md shrink-0 border border-rose-500/30">
@@ -132,4 +127,3 @@ export function MemberRow({
     </div>
   );
 }
-

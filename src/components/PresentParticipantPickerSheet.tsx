@@ -96,9 +96,7 @@ export function PresentParticipantPickerSheet({
                       <div className="font-semibold text-sm text-white truncate">
                         {participant.name}
                       </div>
-                      <div className="text-xs text-slate-400">
-                        {participant.studentCode || 'Đang ở hàng chờ'}
-                      </div>
+                      <div className="text-xs text-slate-400">Đang ở hàng chờ</div>
                     </div>
                   </div>
 

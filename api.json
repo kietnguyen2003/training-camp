@@ -1,0 +1,306 @@
+{
+  "generatedAt": "2026-08-21",
+  "purpose": "Minimum backend API surface needed to replace the current Supabase usage in TeamFlow.",
+  "sourceFiles": [
+    "src/services/roomService.ts",
+    "src/App.tsx",
+    "src/services/roomRealtime.ts",
+    "supabase_schema.sql"
+  ],
+  "assumptions": [
+    "The current login screen uses a local access code, not Supabase Auth.",
+    "User profile APIs exist in the codebase but are not currently used by the UI.",
+    "A single room bootstrap endpoint is preferred because the frontend currently reloads all room data after most writes."
+  ],
+  "apiTypes": [
+    {
+      "type": "REST",
+      "usage": "CRUD and state updates"
+    },
+    {
+      "type": "WebSocket",
+      "usage": "Realtime room updates replacing Supabase Realtime"
+    }
+  ],
+  "apis": [
+    {
+      "name": "Get room bootstrap data",
+      "required": true,
+      "type": "REST",
+      "method": "GET",
+      "path": "/api/rooms/:roomId/bootstrap",
+      "usedBy": [
+        "fetchInitialRoomData"
+      ],
+      "returns": {
+        "room": "Room",
+        "teams": "Team[]",
+        "participants": "Participant[]"
+      },
+      "notes": "Should return room, teams, team notes, and participants in one payload."
+    },
+    {
+      "name": "Seed default room data if missing",
+      "required": true,
+      "type": "REST",
+      "method": "POST",
+      "path": "/api/rooms/:roomId/bootstrap/seed",
+      "usedBy": [
+        "fetchInitialRoomData"
+      ],
+      "returns": {
+        "room": "Room",
+        "teams": "Team[]",
+        "participants": "Participant[]"
+      },
+      "notes": "Current Supabase flow auto-creates room, teams, and initial participants when missing. You can also merge this behavior into GET /bootstrap."
+    },
+    {
+      "name": "Update participant team",
+      "required": true,
+      "type": "REST",
+      "method": "PATCH",
+      "path": "/api/participants/:participantId/team",
+      "usedBy": [
+        "updateParticipantTeamInDB"
+      ],
+      "body": {
+        "teamId": "string | null"
+      },
+      "notes": "Used when moving one participant between teams or back to unassigned."
+    },
+    {
+      "name": "Update participant attendance status",
+      "required": true,
+      "type": "REST",
+      "method": "PATCH",
+      "path": "/api/participants/:participantId/status",
+      "usedBy": [
+        "updateParticipantStatusInDB"
+      ],
+      "body": {
+        "status": "present | absent | retired",
+        "note": "string | optional"
+      }
+    },
+    {
+      "name": "Update participant level",
+      "required": true,
+      "type": "REST",
+      "method": "PATCH",
+      "path": "/api/participants/:participantId/level",
+      "usedBy": [
+        "updateParticipantLevelInDB"
+      ],
+      "body": {
+        "level": "number"
+      }
+    },
+    {
+      "name": "Update participant note",
+      "required": true,
+      "type": "REST",
+      "method": "PATCH",
+      "path": "/api/participants/:participantId/note",
+      "usedBy": [
+        "handleUpdateStudentNote"
+      ],
+      "body": {
+        "note": "string"
+      }
+    },
+    {
+      "name": "Create participant",
+      "required": true,
+      "type": "REST",
+      "method": "POST",
+      "path": "/api/rooms/:roomId/participants",
+      "usedBy": [
+        "addParticipantToDB"
+      ],
+      "body": {
+        "name": "string",
+        "teamId": "string | null",
+        "studentCode": "string | optional",
+        "note": "string | optional"
+      },
+      "notes": "Currently used for both add-to-roster and quick-add-to-team flows."
+    },
+    {
+      "name": "Delete one participant",
+      "required": true,
+      "type": "REST",
+      "method": "DELETE",
+      "path": "/api/participants/:participantId",
+      "usedBy": [
+        "deleteParticipantFromDB"
+      ]
+    },
+    {
+      "name": "Delete all participants in a room",
+      "required": true,
+      "type": "REST",
+      "method": "DELETE",
+      "path": "/api/rooms/:roomId/participants",
+      "usedBy": [
+        "deleteAllParticipantsInDB"
+      ],
+      "notes": "Used by bulk import when replacing the existing roster."
+    },
+    {
+      "name": "Batch update participant teams",
+      "required": true,
+      "type": "REST",
+      "method": "PATCH",
+      "path": "/api/participants/team-batch",
+      "usedBy": [
+        "batchUpdateParticipantTeamsInDB"
+      ],
+      "body": {
+        "updates": [
+          {
+            "id": "string",
+            "teamId": "string | null"
+          }
+        ]
+      },
+      "notes": "Used by shuffle/auto-assignment."
+    },
+    {
+      "name": "Reset all team assignments in a room",
+      "required": true,
+      "type": "REST",
+      "method": "PATCH",
+      "path": "/api/rooms/:roomId/participants/reset-teams",
+      "usedBy": [
+        "resetRoomTeamsInDB"
+      ],
+      "notes": "Sets every participant teamId to null."
+    },
+    {
+      "name": "Upsert team note",
+      "required": true,
+      "type": "REST",
+      "method": "PUT",
+      "path": "/api/teams/:teamId/note",
+      "usedBy": [
+        "updateTeamNoteInDB"
+      ],
+      "body": {
+        "note": "string"
+      },
+      "notes": "Should create or update the team note for a team."
+    },
+    {
+      "name": "Subscribe to room changes",
+      "required": true,
+      "type": "WebSocket",
+      "method": "SUBSCRIBE",
+      "path": "/ws/rooms/:roomId",
+      "usedBy": [
+        "subscribeToRoomChanges"
+      ],
+      "events": [
+        "participant.created",
+        "participant.updated",
+        "participant.deleted",
+        "team.updated",
+        "team_note.updated",
+        "level.updated"
+      ],
+      "notes": "Frontend currently reloads room data after realtime events, so event payloads can be minimal."
+    },
+    {
+      "name": "Get user profile",
+      "required": false,
+      "type": "REST",
+      "method": "GET",
+      "path": "/api/users/:userId/profile",
+      "usedBy": [
+        "getUserProfile"
+      ],
+      "notes": "Optional for current UI, but needed if you want parity with the existing user_roles/profile service."
+    },
+    {
+      "name": "Upsert user profile",
+      "required": false,
+      "type": "REST",
+      "method": "PUT",
+      "path": "/api/users/:userId/profile",
+      "usedBy": [
+        "upsertUserProfile"
+      ],
+      "body": {
+        "email": "string",
+        "full_name": "string",
+        "avatar_url": "string | optional",
+        "role": "host | viewer"
+      },
+      "notes": "Optional for current UI, but useful if you later restore real user accounts."
+    }
+  ],
+  "dataEntities": [
+    {
+      "name": "rooms",
+      "fields": [
+        "id",
+        "code",
+        "name",
+        "activity",
+        "updated_at",
+        "created_at"
+      ]
+    },
+    {
+      "name": "teams",
+      "fields": [
+        "id",
+        "room_id",
+        "number",
+        "name",
+        "lead_name",
+        "lead_avatar",
+        "color_scheme_id",
+        "note"
+      ]
+    },
+    {
+      "name": "team_notes",
+      "fields": [
+        "id",
+        "room_id",
+        "team_id",
+        "content",
+        "created_by_role",
+        "updated_at"
+      ]
+    },
+    {
+      "name": "participants",
+      "fields": [
+        "id",
+        "room_id",
+        "team_id",
+        "level",
+        "name",
+        "student_code",
+        "status",
+        "note",
+        "avatar",
+        "updated_at"
+      ]
+    },
+    {
+      "name": "user_roles",
+      "optional": true,
+      "fields": [
+        "id",
+        "email",
+        "full_name",
+        "avatar_url",
+        "role",
+        "updated_at"
+      ]
+    }
+  ]
+}

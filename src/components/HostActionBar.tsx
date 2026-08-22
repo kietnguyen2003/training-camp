@@ -1,4 +1,4 @@
-import { Shuffle, RotateCcw, UserPlus, UserCheck } from 'lucide-react';
+import { Shuffle, RotateCcw, UserPlus, UserCheck, UsersRound } from 'lucide-react';
 
 interface HostActionBarProps {
   unassignedCount: number;
@@ -8,6 +8,7 @@ interface HostActionBarProps {
   onOpenAttendance: () => void;
   onOpenReset: () => void;
   onOpenAddMember: () => void;
+  onOpenAssistantBoard: () => void;
 }
 
 export function HostActionBar({
@@ -18,6 +19,7 @@ export function HostActionBar({
   onOpenAttendance,
   onOpenReset,
   onOpenAddMember,
+  onOpenAssistantBoard,
 }: HostActionBarProps) {
   return (
     <div
@@ -65,6 +67,17 @@ export function HostActionBar({
           aria-label="Thêm học viên mới"
         >
           <UserPlus className="w-4 h-4" />
+        </button>
+
+        <button
+          type="button"
+          id="host-action-assistants-btn"
+          onClick={onOpenAssistantBoard}
+          className="w-10 h-10 rounded-full bg-[#27384E] hover:bg-sky-500/20 text-sky-200 border border-slate-600/50 flex items-center justify-center transition-all shrink-0 cursor-pointer active:scale-95"
+          title="Bảng chọn trợ giảng"
+          aria-label="Bảng chọn trợ giảng"
+        >
+          <UsersRound className="w-4 h-4" />
         </button>
 
         {/* Reset Button */}

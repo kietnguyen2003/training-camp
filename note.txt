@@ -1,0 +1,2 @@
+- xây trang giao diện cho học viên, có thể xem total số buổi học, số buổi học trong tháng này, học phí chưa thanh toán
+- sẽ có 1 use case là, host chụp hình, host sẽ gửi hình đó cho từng học viên luôn, học viên có thể tự xem hình mình mà không phải lên googgle drive xem tất cả các hình nữa.

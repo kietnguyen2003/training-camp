@@ -2,7 +2,6 @@ import { memo, useEffect, useMemo, useRef, useState, type DragEvent, type TouchE
 import {
   Bell,
   Users,
-  UserPlus,
   UserCheck,
   UserX,
   X,
@@ -20,7 +19,6 @@ interface TeamGrid2x2Props {
   onDragEndStudent: () => void;
   onDropOnTeam: (teamId: string, studentId: string) => void;
   onMoveMember: (participant: Participant) => void;
-  onQuickAddMember: (teamId: string) => void;
   onOpenTeamNote: (teamId: string) => void;
   onSelectEmptyTeam: (teamId: string) => void;
   onToggleStatus: (participantId: string) => void;
@@ -37,7 +35,6 @@ export const TeamGrid2x2 = memo(function TeamGrid2x2({
   onDragEndStudent,
   onDropOnTeam,
   onMoveMember,
-  onQuickAddMember,
   onOpenTeamNote,
   onSelectEmptyTeam,
   onToggleStatus,
@@ -133,7 +130,7 @@ export const TeamGrid2x2 = memo(function TeamGrid2x2({
         const members = participantsByTeam[team.id] || [];
         const isDragOver = dragOverTeamId === team.id;
         const { colorScheme } = team;
-        const courtLabel = team.lead.name || team.name;
+        const courtLabel = team.name;
         const teamNote = team.note?.trim() ?? '';
         const hasTeamNote = teamNote.length > 0;
 
@@ -165,16 +162,13 @@ export const TeamGrid2x2 = memo(function TeamGrid2x2({
                 >
                   {courtLabel}
                 </h3>
+                {team.assistant ? (
+                  <span className="truncate text-xs font-bold text-sky-700 sm:text-sm">{team.assistant.name}</span>
+                ) : null}
               </div>
 
-              {/* Header Right: Badge & Quick Add Button */}
+              {/* Header Right: Team Note */}
               <div className="flex items-center gap-1.5 shrink-0">
-                <span
-                  className={`text-[10px] sm:text-xs font-extrabold px-2.5 py-0.5 rounded-full border ${colorScheme.badgeBg}`}
-                >
-                  {members.length} HV
-                </span>
-
                 <button
                   type="button"
                   id={`team-note-btn-${team.id}`}
@@ -194,21 +188,6 @@ export const TeamGrid2x2 = memo(function TeamGrid2x2({
                     <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-[#FF9F1C] border border-white" />
                   ) : null}
                 </button>
-
-                {isHost && (
-                  <button
-                    type="button"
-                    id={`team-quick-add-${team.id}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onQuickAddMember(team.id);
-                    }}
-                    className="w-6 h-6 rounded-full bg-[#1B2A3E] hover:bg-slate-800 text-[#D9B472] border border-slate-700 flex items-center justify-center transition-all active:scale-90 cursor-pointer shadow-xs"
-                    title={`Thêm học viên vào sân ${courtLabel}`}
-                  >
-                    <UserPlus className="w-3 h-3" />
-                  </button>
-                )}
               </div>
             </div>
 

@@ -4,6 +4,7 @@ import {
   Room,
   Team,
   Participant,
+  ParticipantRoleRecord,
   ToastMessage,
 } from './types';
 import {
@@ -25,14 +26,23 @@ import {
   updateParticipantTeamInDB,
   updateParticipantStatusInDB,
   addParticipantToDB,
+  findParticipantByStudentCode,
   resetRoomTeamsInDB,
   deleteAllParticipantsInDB,
   deleteParticipantFromDB,
   batchUpdateParticipantTeamsInDB,
   updateParticipantLevelInDB,
   updateTeamNoteInDB,
+  updateTeamAssistantInDB,
+  fetchParticipantRoleRecords,
+  setParticipantRoleInDB,
   subscribeToRoomChanges,
 } from './services/roomService';
+import {
+  fetchTeamHistorySnapshots,
+  saveTeamHistorySnapshot,
+} from './services/teamHistory';
+import { createTeamHistorySnapshot } from './services/teamHistorySnapshot';
 import { getTapToggleStatus } from './services/attendanceStatus';
 import { assignPresentParticipantsToTeams } from './services/levelAssignment';
 import {
@@ -41,6 +51,13 @@ import {
   getStoredAccessRole,
   persistAccessRole,
 } from './utils/hostAuth';
+import { TeamHistorySnapshot, TeamHistoryTeam } from './types';
+import { createHistoricalParticipants } from './services/teamHistoryView';
+import { TeamHistorySidebar } from './components/TeamHistorySidebar';
+import { assignAssistantToTeam } from './services/teamAssistants';
+import { CalendarPlus } from 'lucide-react';
+import { getAssistantParticipants } from './services/assistantRoster';
+import { clearParticipantTeamAssignments } from './services/teamReset';
 
 const AttendanceSheet = lazy(async () => {
   const module = await import('./components/AttendanceSheet');
@@ -77,6 +94,26 @@ const TeamNoteSheet = lazy(async () => {
   return { default: module.TeamNoteSheet };
 });
 
+const TeamHistorySheet = lazy(async () => {
+  const module = await import('./components/TeamHistorySheet');
+  return { default: module.TeamHistorySheet };
+});
+
+const TeamAssistantSheet = lazy(async () => {
+  const module = await import('./components/TeamAssistantSheet');
+  return { default: module.TeamAssistantSheet };
+});
+
+const AssistantBoardSheet = lazy(async () => {
+  const module = await import('./components/AssistantBoardSheet');
+  return { default: module.AssistantBoardSheet };
+});
+
+const AssistantRosterSheet = lazy(async () => {
+  const module = await import('./components/AssistantRosterSheet');
+  return { default: module.AssistantRosterSheet };
+});
+
 export default function App() {
   // App State
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
@@ -89,6 +126,9 @@ export default function App() {
   const [room, setRoom] = useState<Room>(INITIAL_ROOM);
   const [teams, setTeams] = useState<Team[]>(INITIAL_TEAMS);
   const [participants, setParticipants] = useState<Participant[]>(INITIAL_PARTICIPANTS);
+  const [historySnapshots, setHistorySnapshots] = useState<TeamHistorySnapshot[]>([]);
+  const [participantRoleRecords, setParticipantRoleRecords] = useState<ParticipantRoleRecord[]>([]);
+  const [selectedHistorySnapshot, setSelectedHistorySnapshot] = useState<TeamHistorySnapshot | null>(null);
   const realtimeReloadTimerRef = useRef<number | null>(null);
 
   // Load Room & Participants from Supabase
@@ -126,6 +166,18 @@ export default function App() {
     };
   }, [room.id, reloadRoomData]);
 
+  useEffect(() => {
+    fetchTeamHistorySnapshots(room.id)
+      .then(setHistorySnapshots)
+      .catch((error) => console.error('Error fetching team history:', error));
+  }, [room.id]);
+
+  useEffect(() => {
+    fetchParticipantRoleRecords(room.id)
+      .then(setParticipantRoleRecords)
+      .catch((error) => console.error('Error fetching participant roles:', error));
+  }, [room.id]);
+
   // Local access session
   useEffect(() => {
     const storedAccessRole = getStoredAccessRole();
@@ -143,13 +195,30 @@ export default function App() {
     setIsCheckingAuth(false);
   }, []);
 
-  const handleAccessLogin = (role: AccessRole) => {
+  const handleAccessLogin = (role: AccessRole, viewer?: { id: string; name: string; studentCode: string }) => {
     persistAccessRole(role);
-    setUser(INITIAL_USER);
+    setUser(viewer ? {
+      id: viewer.id,
+      name: viewer.name,
+      email: 'Tài khoản học viên',
+      role: 'viewer',
+    } : INITIAL_USER);
     setAccessRole(role);
     setIsLoggedIn(true);
     setIsCheckingAuth(false);
     showToast(role === 'host' ? 'Đã vào chế độ host' : 'Đã vào chế độ viewer', 'success');
+  };
+
+  const handleViewerCodeLogin = async (studentCode: string) => {
+    const participant = await findParticipantByStudentCode(room.id, studentCode);
+    if (!participant?.student_code) return false;
+
+    handleAccessLogin('viewer', {
+      id: participant.id,
+      name: participant.name,
+      studentCode: participant.student_code,
+    });
+    return true;
   };
 
   const handleSignOut = async () => {
@@ -164,13 +233,14 @@ export default function App() {
   // Interaction State
   const [recentlyMovedId, setRecentlyMovedId] = useState<string | null>(null);
   const [activeSheet, setActiveSheet] = useState<
-    'move' | 'reset' | 'user' | 'add' | 'attendance' | 'assignPresent' | 'teamNote' | null
+    'move' | 'reset' | 'user' | 'add' | 'attendance' | 'assignPresent' | 'teamNote' | 'assistant' | 'assistantBoard' | 'assistantRoster' | 'history' | null
   >(null);
   const [selectedParticipantForMove, setSelectedParticipantForMove] =
     useState<Participant | null>(null);
   const [targetTeamForAdd, setTargetTeamForAdd] = useState<string | null>(null);
   const [targetTeamForPresentAssign, setTargetTeamForPresentAssign] = useState<Team | null>(null);
   const [targetTeamForNote, setTargetTeamForNote] = useState<Team | null>(null);
+  const [targetTeamForAssistant, setTargetTeamForAssistant] = useState<Team | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   // Toast Helper
@@ -194,25 +264,58 @@ export default function App() {
     () => Object.fromEntries(participants.map((participant) => [participant.id, participant])) as Record<string, Participant>,
     [participants]
   );
+  const visibleParticipants = useMemo(
+    () => selectedHistorySnapshot ? createHistoricalParticipants(selectedHistorySnapshot) : participants,
+    [participants, selectedHistorySnapshot]
+  );
+  const assistantParticipants = useMemo(
+    () => getAssistantParticipants(room.id, participants, participantRoleRecords),
+    [participantRoleRecords, participants, room.id]
+  );
+  const assistantParticipantIds = useMemo(
+    () => new Set(assistantParticipants.map((participant) => participant.id)),
+    [assistantParticipants]
+  );
+  const visibleTeams = useMemo(() => {
+    if (!selectedHistorySnapshot) return teams;
+
+    const savedTeams = new Map<string, TeamHistoryTeam>(
+      selectedHistorySnapshot.teams.map((team) => [team.teamId, team])
+    );
+
+    return teams.map((team) => {
+      const savedTeam = savedTeams.get(team.id);
+      return savedTeam ? {
+        ...team,
+        name: savedTeam.teamName,
+        note: savedTeam.note ?? undefined,
+        assistant: savedTeam.assistant,
+      } : team;
+    });
+  }, [selectedHistorySnapshot, teams]);
   const participantsByTeam = useMemo(() => {
     const grouped: Record<string, Participant[]> = {};
 
-    for (const team of teams) {
+    for (const team of visibleTeams) {
       grouped[team.id] = [];
     }
 
-    for (const participant of participants) {
+    for (const participant of visibleParticipants) {
       if (participant.teamId && grouped[participant.teamId]) {
         grouped[participant.teamId].push(participant);
       }
     }
 
     return grouped;
-  }, [participants, teams]);
+  }, [visibleParticipants, visibleTeams]);
   const participantsByLevel = useMemo(() => {
     const grouped: Record<number, Participant[]> = {};
 
-    for (const participant of participants) {
+    const levelParticipants = selectedHistorySnapshot
+      ? visibleParticipants
+      : visibleParticipants.filter((participant) => !assistantParticipantIds.has(participant.id));
+
+    for (const participant of levelParticipants) {
       const level = participant.level ?? 0;
       if (!grouped[level]) {
         grouped[level] = [];
@@ -221,7 +324,7 @@ export default function App() {
     }
 
     return grouped;
-  }, [participants]);
+  }, [assistantParticipantIds, selectedHistorySnapshot, visibleParticipants]);
   const participantStats = useMemo(() => {
     const presentParticipants: Participant[] = [];
     const absentParticipants: Participant[] = [];
@@ -267,7 +370,11 @@ export default function App() {
   if (!isLoggedIn) {
     return (
       <>
-        <LoginScreen onSuccess={handleAccessLogin} onError={(msg) => showToast(msg, 'warning')} />
+        <LoginScreen
+          onHostSuccess={() => handleAccessLogin('host')}
+          onViewerCodeLogin={handleViewerCodeLogin}
+          onError={(msg) => showToast(msg, 'warning')}
+        />
         <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       </>
     );
@@ -330,6 +437,10 @@ export default function App() {
   const handleAssignLevel = (level: number, participantId: string) => {
     const participant = participantLookup[participantId];
     if (!participant) return;
+    if (assistantParticipantIds.has(participantId)) {
+      showToast('Trợ giảng không cần xếp level', 'info');
+      return;
+    }
     if (participant.level === level) return;
 
     setParticipants((prev) =>
@@ -420,7 +531,11 @@ export default function App() {
 
   // Add single student to roster
   const handleAddStudentToRoster = async (name: string, studentCode?: string, note?: string) => {
-    await addParticipantToDB(room.id, name, null);
+    const addedParticipant = await addParticipantToDB(room.id, name, null, studentCode, note);
+    if (!addedParticipant) {
+      showToast('Không thể thêm học sinh. Mã học viên có thể đã tồn tại.', 'warning');
+      return;
+    }
     await reloadRoomData();
     showToast(`Đã thêm học sinh ${name} vào danh sách lớp`, 'success');
   };
@@ -470,7 +585,7 @@ export default function App() {
 
   // Shuffle Action (Only shuffles PRESENT unassigned members!)
   const handleShuffle = async () => {
-    const updates = assignPresentParticipantsToTeams(participants, teams);
+    const updates = assignPresentParticipantsToTeams(participants, teams, assistantParticipantIds);
 
     if (updates.length === 0) {
       showToast('Không có học sinh có mặt nào đang chờ chia nhóm', 'warning');
@@ -492,19 +607,30 @@ export default function App() {
     showToast(`Đã xếp ${updates.length} học sinh có mặt vào sân theo level`, 'success');
   };
 
-  // Reset Action
-  const handleResetTeams = async () => {
-    setParticipants((prev) =>
-      prev.map((p) => ({ ...p, teamId: null, updatedAt: Date.now() }))
-    );
+  const clearTeamsAfterSession = async (message: string, toastType: ToastMessage['type']) => {
+    setParticipants((prev) => clearParticipantTeamAssignments(prev));
     await resetRoomTeamsInDB(room.id);
     setRoom((prev) => ({ ...prev, lastUpdated: 'vừa xong' }));
-    showToast('Đã chuyển tất cả học sinh về hàng chờ (Chưa chia nhóm)', 'warning');
+    showToast(message, toastType);
+  };
+
+  // Reset Action
+  const handleResetTeams = async () => {
+    await clearTeamsAfterSession('Đã chuyển tất cả học sinh về hàng chờ (Chưa chia nhóm)', 'warning');
+  };
+
+  const handleCompleteAttendance = async () => {
+    await clearTeamsAfterSession('Đã lưu điểm danh và đưa học viên về hàng chờ', 'success');
+    setActiveSheet(null);
   };
 
   // Add Participant Action from AddSheet
-  const handleAddParticipant = async (name: string, teamId: string | null) => {
-    await addParticipantToDB(room.id, name, teamId);
+  const handleAddParticipant = async (name: string, studentCode: string, teamId: string | null) => {
+    const addedParticipant = await addParticipantToDB(room.id, name, teamId, studentCode);
+    if (!addedParticipant) {
+      showToast('Không thể thêm học viên. Mã học viên có thể đã tồn tại.', 'warning');
+      return;
+    }
     await reloadRoomData();
     showToast(`Đã thêm ${name}`, 'success');
   };
@@ -550,13 +676,89 @@ export default function App() {
     showToast(note ? 'Đã lưu ghi chú cho sân' : 'Đã xoá ghi chú của sân', 'success');
   };
 
+  const handleOpenTeamAssistant = (teamId: string) => {
+    const targetTeam = teams.find((team) => team.id === teamId) ?? null;
+    if (!targetTeam) return;
+
+    setTargetTeamForAssistant(targetTeam);
+    setActiveSheet('assistant');
+  };
+
+  const handleSelectTeamAssistant = async (teamId: string, participant: Participant | null) => {
+    const previousTeams = teams;
+    setTeams((currentTeams) => assignAssistantToTeam(currentTeams, teamId, participant));
+
+    try {
+      await updateTeamAssistantInDB(teamId, participant?.id ?? null);
+      showToast(
+        participant ? `Đã chọn ${participant.name} làm trợ giảng` : 'Đã bỏ trợ giảng khỏi sân',
+        'success'
+      );
+    } catch (error) {
+      console.error('Error updating team assistant:', error);
+      setTeams(previousTeams);
+      showToast('Không thể cập nhật trợ giảng. Vui lòng thử lại.', 'warning');
+    }
+  };
+
+  const handleSetParticipantAssistantRole = async (participant: Participant, isAssistant: boolean) => {
+    if (!isAssistant && teams.some((team) => team.assistant?.participantId === participant.id)) {
+      showToast('Hãy bỏ phân công sân của trợ giảng này trước.', 'warning');
+      return;
+    }
+
+    try {
+      await setParticipantRoleInDB(room.id, participant.id, isAssistant ? 'assistant' : 'viewer');
+      setParticipantRoleRecords((currentRecords) => [
+        ...currentRecords.filter(
+          (record) => record.roomId !== room.id || record.participantId !== participant.id
+        ),
+        {
+          roomId: room.id,
+          participantId: participant.id,
+          role: isAssistant ? 'assistant' : 'viewer',
+        },
+      ]);
+      showToast(
+        isAssistant
+          ? `Đã thêm ${participant.name} vào danh sách trợ giảng`
+          : `Đã bỏ ${participant.name} khỏi danh sách trợ giảng`,
+        'success'
+      );
+    } catch (error) {
+      console.error('Error updating participant role:', error);
+      showToast('Không thể cập nhật danh sách trợ giảng. Vui lòng thử lại.', 'warning');
+    }
+  };
+
+  const handleSaveTeamHistory = async (historyDate: string) => {
+    try {
+      const currentSnapshot = createTeamHistorySnapshot(historyDate, teams, participants);
+      const savedSnapshot = await saveTeamHistorySnapshot(room.id, currentSnapshot);
+
+      setHistorySnapshots((previousSnapshots) => [
+        savedSnapshot,
+        ...previousSnapshots.filter((snapshot) => snapshot.id !== savedSnapshot.id),
+      ].sort((first, second) => second.historyDate.localeCompare(first.historyDate)));
+      showToast(`Đã lưu lịch sử chia team ngày ${historyDate}`, 'success');
+    } catch (error) {
+      console.error('Error saving team history:', error);
+      showToast('Không thể lưu lịch sử. Vui lòng thử lại.', 'warning');
+    }
+  };
+
   const shouldRenderAttendanceSheet = activeSheet === 'attendance';
   const shouldRenderMoveSheet = activeSheet === 'move';
   const shouldRenderResetSheet = activeSheet === 'reset';
   const shouldRenderAddSheet = activeSheet === 'add';
   const shouldRenderAssignPresentSheet = activeSheet === 'assignPresent';
   const shouldRenderTeamNoteSheet = activeSheet === 'teamNote';
+  const shouldRenderAssistantSheet = activeSheet === 'assistant';
+  const shouldRenderAssistantBoard = activeSheet === 'assistantBoard';
+  const shouldRenderAssistantRoster = activeSheet === 'assistantRoster';
+  const shouldRenderHistorySheet = activeSheet === 'history';
   const shouldRenderUserMenu = activeSheet === 'user';
+  const isHistoricalView = selectedHistorySnapshot !== null;
 
   return (
     <div className="h-[100dvh] max-h-[100dvh] bg-[#F7F3E9] text-slate-100 flex flex-col selection:bg-amber-500/20 overflow-hidden">
@@ -573,14 +775,23 @@ export default function App() {
       {/* Main Content Area */}
       <main
         id="main-room-content"
-        className="flex-1 max-w-4xl mx-auto w-full px-2 sm:px-4 pt-1.5 sm:pt-2 flex flex-col min-h-0 overflow-hidden pb-16 sm:pb-18"
+        className="flex-1 max-w-6xl mx-auto w-full px-2 sm:px-4 pt-1.5 sm:pt-2 flex flex-col min-h-0 overflow-hidden pb-16 sm:pb-18"
       >
         {isLoading ? (
           <RoomSkeleton />
         ) : (
-          <div className="flex-1 flex flex-col min-h-0 space-y-1.5">
+          <div className="flex-1 flex min-h-0 flex-col gap-2.5 lg:flex-row lg:gap-3">
+            <TeamHistorySidebar
+              snapshots={historySnapshots}
+              selectedHistoryDate={selectedHistorySnapshot?.historyDate ?? null}
+              isHost={isHost}
+              onShowCurrent={() => setSelectedHistorySnapshot(null)}
+              onSelectSnapshot={setSelectedHistorySnapshot}
+              onOpenHistory={() => setActiveSheet('history')}
+            />
+
             {/* 4 Groups Grid 2x2 */}
-            <div className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 flex flex-col min-h-0 min-w-0">
               <div className="flex items-center gap-2 px-1 pb-2 shrink-0">
                 <button
                   type="button"
@@ -604,20 +815,41 @@ export default function App() {
                 >
                   Xếp level
                 </button>
+                {isHost && !isHistoricalView ? (
+                  <button
+                    type="button"
+                    onClick={() => setActiveSheet('history')}
+                    className="flex items-center gap-1.5 rounded-full border border-[#D9B472]/60 bg-[#FFF8E9] px-3 py-2 text-xs font-bold text-[#8A5D12] transition-colors hover:bg-[#F7E7BE]"
+                  >
+                    <CalendarPlus className="h-3.5 w-3.5" />
+                    <span>Lưu lịch sử</span>
+                  </button>
+                ) : null}
+                {isHistoricalView ? (
+                  <div className="ml-auto flex items-center gap-2 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-bold text-amber-800">
+                    <span>Đang xem: {selectedHistorySnapshot.historyDate}</span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedHistorySnapshot(null)}
+                      className="rounded-full bg-[#1B2A3E] px-2 py-0.5 text-[10px] text-white hover:bg-[#27384E]"
+                    >
+                      Hiện tại
+                    </button>
+                  </div>
+                ) : null}
               </div>
 
               {activeView === 'courts' ? (
                 <TeamGrid2x2
-                  teams={teams}
+                  teams={visibleTeams}
                   participantsByTeam={participantsByTeam}
-                  isHost={isHost}
+                  isHost={isHost && !isHistoricalView}
                   recentlyMovedId={recentlyMovedId}
                   draggingStudentId={draggingStudentId}
                   onDragStartStudent={handleDragStartStudent}
                   onDragEndStudent={handleDragEndStudent}
                   onDropOnTeam={handleDropOnTeam}
                   onMoveMember={handleOpenMoveSheet}
-                  onQuickAddMember={handleQuickAddTeamMember}
                   onOpenTeamNote={handleOpenTeamNote}
                   onSelectEmptyTeam={handleOpenPresentPickerForTeam}
                   onToggleStatus={handleToggleAttendance}
@@ -625,10 +857,10 @@ export default function App() {
                 />
               ) : (
                 <LevelGrid2x2
-                  teams={teams}
+                  teams={visibleTeams}
                   participantsByLevel={participantsByLevel}
                   participantLookup={participantLookup}
-                  isHost={isHost}
+                  isHost={isHost && !isHistoricalView}
                   recentlyMovedId={recentlyMovedId}
                   draggingStudentId={draggingStudentId}
                   onDragStartStudent={handleDragStartStudent}
@@ -642,7 +874,7 @@ export default function App() {
       </main>
 
       {/* Sticky Bottom Action Bar (Host Mode Only) */}
-      {isHost && (
+      {isHost && !isHistoricalView && (
         <HostActionBar
           unassignedCount={participantStats.presentUnassigned.length}
           presentCount={participantStats.presentParticipants.length}
@@ -654,6 +886,7 @@ export default function App() {
             setTargetTeamForAdd(null);
             setActiveSheet('add');
           }}
+          onOpenAssistantBoard={() => setActiveSheet('assistantBoard')}
         />
       )}
 
@@ -664,6 +897,7 @@ export default function App() {
             participants={participants}
             teams={teams}
             onClose={() => setActiveSheet(null)}
+            onCompleteAttendance={handleCompleteAttendance}
             onToggleStatus={handleToggleAttendance}
             onSetStatus={handleSetAttendanceStatus}
             onMarkAllStatus={handleMarkAllAttendance}
@@ -733,6 +967,51 @@ export default function App() {
               setTargetTeamForNote(null);
             }}
             onSave={handleSaveTeamNote}
+          />
+        ) : null}
+
+        {shouldRenderAssistantSheet ? (
+          <TeamAssistantSheet
+            isOpen={shouldRenderAssistantSheet}
+            team={targetTeamForAssistant}
+            participants={participants}
+            onClose={() => {
+              setActiveSheet(null);
+              setTargetTeamForAssistant(null);
+            }}
+            onSelectAssistant={handleSelectTeamAssistant}
+          />
+        ) : null}
+
+        {shouldRenderAssistantBoard ? (
+          <AssistantBoardSheet
+            isOpen={shouldRenderAssistantBoard}
+            teams={teams}
+            assistantParticipants={assistantParticipants}
+            onClose={() => setActiveSheet(null)}
+            onSelectAssistant={handleSelectTeamAssistant}
+            onOpenAssistantRoster={() => setActiveSheet('assistantRoster')}
+          />
+        ) : null}
+
+        {shouldRenderAssistantRoster ? (
+          <AssistantRosterSheet
+            isOpen={shouldRenderAssistantRoster}
+            participants={participants}
+            assistantParticipantIds={assistantParticipantIds}
+            onClose={() => setActiveSheet('assistantBoard')}
+            onSetAssistant={handleSetParticipantAssistantRole}
+          />
+        ) : null}
+
+        {shouldRenderHistorySheet ? (
+          <TeamHistorySheet
+            isOpen={shouldRenderHistorySheet}
+            isHost={isHost}
+            snapshots={historySnapshots}
+            onClose={() => setActiveSheet(null)}
+            onSave={handleSaveTeamHistory}
+            onViewHistory={setSelectedHistorySnapshot}
           />
         ) : null}
 

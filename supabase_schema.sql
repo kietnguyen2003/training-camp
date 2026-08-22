@@ -2,45 +2,7 @@
 -- TEAMFLOW SUPABASE DATABASE SCHEMA & REALTIME SETUP SCRIPT
 -- ========================================================
 
--- 1. Create user_roles (profiles) table linked to auth.users
-CREATE TABLE IF NOT EXISTS public.user_roles (
-  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  email TEXT NOT NULL,
-  full_name TEXT,
-  avatar_url TEXT,
-  role TEXT NOT NULL DEFAULT 'viewer', -- 'host' | 'viewer'
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Trigger to automatically create a user_roles record upon new Google Sign-In signup
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
-BEGIN
-  INSERT INTO public.user_roles (id, email, full_name, avatar_url, role)
-  VALUES (
-    NEW.id,
-    NEW.email,
-    COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', NEW.email),
-    NEW.raw_user_meta_data->>'avatar_url',
-    COALESCE(NEW.raw_user_meta_data->>'role', 'viewer')
-  )
-  ON CONFLICT (id) DO UPDATE
-  SET
-    email = EXCLUDED.email,
-    full_name = EXCLUDED.full_name,
-    avatar_url = EXCLUDED.avatar_url;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Bind trigger to auth.users table
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-
--- 2. Create rooms table
+-- 1. Create rooms table
 CREATE TABLE IF NOT EXISTS public.rooms (
   id TEXT PRIMARY KEY,
   code TEXT NOT NULL,
@@ -50,7 +12,7 @@ CREATE TABLE IF NOT EXISTS public.rooms (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. Create teams table
+-- 2. Create teams table
 CREATE TABLE IF NOT EXISTS public.teams (
   id TEXT PRIMARY KEY,
   room_id TEXT REFERENCES public.rooms(id) ON DELETE CASCADE,
@@ -65,7 +27,7 @@ CREATE TABLE IF NOT EXISTS public.teams (
 
 ALTER TABLE public.teams ADD COLUMN IF NOT EXISTS note TEXT;
 
--- 4. Create levels table
+-- 3. Create levels table
 CREATE TABLE IF NOT EXISTS public.levels (
   id TEXT PRIMARY KEY,
   room_id TEXT REFERENCES public.rooms(id) ON DELETE CASCADE,
@@ -76,7 +38,7 @@ CREATE TABLE IF NOT EXISTS public.levels (
   UNIQUE (room_id, number)
 );
 
--- 5. Create team_notes table
+-- 4. Create team_notes table
 CREATE TABLE IF NOT EXISTS public.team_notes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   room_id TEXT NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
@@ -91,7 +53,7 @@ CREATE TABLE IF NOT EXISTS public.team_notes (
 CREATE INDEX IF NOT EXISTS idx_team_notes_room_id ON public.team_notes(room_id);
 CREATE INDEX IF NOT EXISTS idx_team_notes_team_id ON public.team_notes(team_id);
 
--- 6. Create participants table
+-- 5. Create participants table
 CREATE TABLE IF NOT EXISTS public.participants (
   id TEXT PRIMARY KEY,
   room_id TEXT REFERENCES public.rooms(id) ON DELETE CASCADE,
@@ -108,30 +70,62 @@ CREATE TABLE IF NOT EXISTS public.participants (
 
 ALTER TABLE public.participants ADD COLUMN IF NOT EXISTS level INT NOT NULL DEFAULT 0;
 
--- 7. Enable Full Replica Identity for Realtime tracking
+-- Roles are scoped to a participant within a room.
+CREATE TABLE IF NOT EXISTS public.participant_role (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  room_id TEXT NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
+  participant_id TEXT NOT NULL REFERENCES public.participants(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'viewer' CHECK (role IN ('viewer', 'assistant', 'host')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (room_id, participant_id)
+);
+
+ALTER TABLE public.teams ADD COLUMN IF NOT EXISTS assistant_participant_id TEXT
+  REFERENCES public.participants(id) ON DELETE SET NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_participants_unique_student_code_per_room
+  ON public.participants(room_id, student_code)
+  WHERE student_code IS NOT NULL;
+
+-- 7. Store one immutable team-assignment snapshot per room and date
+CREATE TABLE IF NOT EXISTS public.team_history_snapshots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  room_id TEXT NOT NULL REFERENCES public.rooms(id) ON DELETE CASCADE,
+  history_date DATE NOT NULL,
+  snapshot_data JSONB NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (room_id, history_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_team_history_snapshots_room_date
+  ON public.team_history_snapshots(room_id, history_date DESC);
+
+-- 8. Enable Full Replica Identity for Realtime tracking
 ALTER TABLE public.rooms REPLICA IDENTITY FULL;
 ALTER TABLE public.teams REPLICA IDENTITY FULL;
 ALTER TABLE public.levels REPLICA IDENTITY FULL;
 ALTER TABLE public.team_notes REPLICA IDENTITY FULL;
 ALTER TABLE public.participants REPLICA IDENTITY FULL;
-ALTER TABLE public.user_roles REPLICA IDENTITY FULL;
+ALTER TABLE public.participant_role REPLICA IDENTITY FULL;
+ALTER TABLE public.team_history_snapshots REPLICA IDENTITY FULL;
 
--- 8. Add tables to Supabase Realtime publication
+-- 9. Add tables to Supabase Realtime publication
 DROP PUBLICATION IF EXISTS supabase_realtime;
-CREATE PUBLICATION supabase_realtime FOR TABLE public.rooms, public.teams, public.levels, public.team_notes, public.participants, public.user_roles;
+CREATE PUBLICATION supabase_realtime FOR TABLE public.rooms, public.teams, public.levels, public.team_notes, public.participants, public.participant_role, public.team_history_snapshots;
 
--- 9. Enable Row Level Security (RLS)
-ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
+-- 10. Enable Row Level Security (RLS)
+ALTER TABLE public.participant_role ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.rooms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.teams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.levels ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.team_notes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.participants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.team_history_snapshots ENABLE ROW LEVEL SECURITY;
 
--- 10. RLS Policies
-DROP POLICY IF EXISTS "Allow public read access to user_roles" ON public.user_roles;
-DROP POLICY IF EXISTS "Allow users to update own role" ON public.user_roles;
-DROP POLICY IF EXISTS "Allow users to insert own role" ON public.user_roles;
+-- 11. RLS Policies
+DROP POLICY IF EXISTS "Allow public read access to participant_role" ON public.participant_role;
 DROP POLICY IF EXISTS "Allow public read access to rooms" ON public.rooms;
 DROP POLICY IF EXISTS "Allow public read access to teams" ON public.teams;
 DROP POLICY IF EXISTS "Allow public read access to levels" ON public.levels;
@@ -142,19 +136,23 @@ DROP POLICY IF EXISTS "Allow all access to teams" ON public.teams;
 DROP POLICY IF EXISTS "Allow all access to levels" ON public.levels;
 DROP POLICY IF EXISTS "Allow all access to team_notes" ON public.team_notes;
 DROP POLICY IF EXISTS "Allow all access to participants" ON public.participants;
+DROP POLICY IF EXISTS "Allow all access to participant_role" ON public.participant_role;
+DROP POLICY IF EXISTS "Allow public read access to team history snapshots" ON public.team_history_snapshots;
+DROP POLICY IF EXISTS "Allow all access to team history snapshots" ON public.team_history_snapshots;
 
-CREATE POLICY "Allow public read access to user_roles" ON public.user_roles FOR SELECT USING (true);
-CREATE POLICY "Allow users to update own role" ON public.user_roles FOR UPDATE USING (auth.uid() = id);
-CREATE POLICY "Allow users to insert own role" ON public.user_roles FOR INSERT WITH CHECK (auth.uid() = id);
+CREATE POLICY "Allow public read access to participant_role" ON public.participant_role FOR SELECT USING (true);
+CREATE POLICY "Allow all access to participant_role" ON public.participant_role FOR ALL USING (true) WITH CHECK (true);
 
 CREATE POLICY "Allow public read access to rooms" ON public.rooms FOR SELECT USING (true);
 CREATE POLICY "Allow public read access to teams" ON public.teams FOR SELECT USING (true);
 CREATE POLICY "Allow public read access to levels" ON public.levels FOR SELECT USING (true);
 CREATE POLICY "Allow public read access to team_notes" ON public.team_notes FOR SELECT USING (true);
 CREATE POLICY "Allow public read access to participants" ON public.participants FOR SELECT USING (true);
+CREATE POLICY "Allow public read access to team history snapshots" ON public.team_history_snapshots FOR SELECT USING (true);
 
 CREATE POLICY "Allow all access to rooms" ON public.rooms FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access to teams" ON public.teams FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access to levels" ON public.levels FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access to team_notes" ON public.team_notes FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access to participants" ON public.participants FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow all access to team history snapshots" ON public.team_history_snapshots FOR ALL USING (true) WITH CHECK (true);

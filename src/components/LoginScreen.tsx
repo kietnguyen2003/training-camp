@@ -2,14 +2,15 @@ import { FormEvent, useState } from 'react';
 import { motion } from 'motion/react';
 import { Zap, RefreshCw } from 'lucide-react';
 import logoImg from '../../assets/image.png';
-import { AccessRole, getAccessRoleFromCode } from '../utils/hostAuth';
+import { getAccessRoleFromCode } from '../utils/hostAuth';
 
 interface LoginScreenProps {
-  onSuccess: (role: AccessRole) => void;
+  onHostSuccess: () => void;
+  onViewerCodeLogin: (studentCode: string) => Promise<boolean>;
   onError?: (msg: string) => void;
 }
 
-export function LoginScreen({ onSuccess, onError }: LoginScreenProps) {
+export function LoginScreen({ onHostSuccess, onViewerCodeLogin, onError }: LoginScreenProps) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [accessCode, setAccessCode] = useState('');
 
@@ -19,14 +20,21 @@ export function LoginScreen({ onSuccess, onError }: LoginScreenProps) {
 
     const accessRole = getAccessRoleFromCode(accessCode);
 
-    if (!accessRole) {
+    if (accessRole === 'host') {
+      onHostSuccess();
+      setAccessCode('');
       setIsConnecting(false);
-      if (onError) onError('Mã truy cập không đúng');
       return;
     }
 
-    onSuccess(accessRole);
-    setAccessCode('');
+    const isViewer = await onViewerCodeLogin(accessCode);
+    if (!isViewer && onError) {
+      onError('Không tìm thấy mã học viên trong lớp này');
+    }
+
+    if (isViewer) {
+      setAccessCode('');
+    }
     setIsConnecting(false);
   };
 
@@ -71,19 +79,20 @@ export function LoginScreen({ onSuccess, onError }: LoginScreenProps) {
         </p>
 
         <form className="w-full space-y-3 mt-8" onSubmit={handleSubmit}>
-          <label htmlFor="host-access-code" className="block text-left">
+          <label htmlFor="access-code" className="block text-left">
             <span className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-300">
-              Mã truy cập
+              Mã học viên hoặc mã host
             </span>
             <input
-              id="host-access-code"
-              type="password"
-              inputMode="numeric"
+              id="access-code"
+              type="text"
+              inputMode="text"
               autoComplete="off"
+              autoCapitalize="characters"
               value={accessCode}
               onChange={(event) => setAccessCode(event.target.value)}
-              placeholder="Nhập mã"
-              className="mt-2 w-full rounded-2xl border border-slate-600 bg-[#111C2B] px-4 py-3.5 text-center text-xl font-black tracking-[0.32em] text-white outline-hidden placeholder:text-slate-500 focus:border-[#D9B472]"
+              placeholder="Ví dụ: SV01"
+              className="mt-2 w-full rounded-2xl border border-slate-600 bg-[#111C2B] px-4 py-3.5 text-center text-xl font-black tracking-[0.12em] uppercase text-white outline-hidden placeholder:text-slate-500 focus:border-[#D9B472]"
             />
           </label>
 

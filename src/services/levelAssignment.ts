@@ -7,20 +7,29 @@ export interface ParticipantTeamAssignment {
 
 export function assignPresentParticipantsToTeams(
   participants: Participant[],
-  teams: Team[]
+  teams: Team[],
+  excludedParticipantIds: ReadonlySet<string> = new Set(),
 ): ParticipantTeamAssignment[] {
   const teamIndexById = new Map(teams.map((team, index) => [team.id, index]));
   const currentLoads = new Map<string, number>(
     teams.map((team) => [
       team.id,
       participants.filter(
-        (participant) => participant.status === 'present' && participant.teamId === team.id
+        (participant) =>
+          !excludedParticipantIds.has(participant.id) &&
+          participant.status === 'present' &&
+          participant.teamId === team.id
       ).length,
     ])
   );
 
   const pendingAssignments = participants
-    .filter((participant) => participant.status === 'present' && participant.teamId === null)
+    .filter(
+      (participant) =>
+        !excludedParticipantIds.has(participant.id) &&
+        participant.status === 'present' &&
+        participant.teamId === null,
+    )
     .sort((left, right) => left.level - right.level);
 
   const updates: ParticipantTeamAssignment[] = [];

@@ -51,6 +51,17 @@ test('ignores absent or already assigned participants when generating updates', 
   ]);
 });
 
+test('does not automatically assign participants who are assistants', () => {
+  const participants: Participant[] = [
+    createParticipant({ id: 'assistant', level: 2, teamId: null, status: 'present' }),
+    createParticipant({ id: 'student', level: 2, teamId: null, status: 'present' }),
+  ];
+
+  assert.deepEqual(assignPresentParticipantsToTeams(participants, teams, new Set(['assistant'])), [
+    { id: 'student', teamId: 'team-3' },
+  ]);
+});
+
 function createTeam(level: number): Team {
   return {
     id: `team-${level + 1}`,
